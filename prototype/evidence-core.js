@@ -101,10 +101,198 @@
     };
   }
 
+  function randomX(rng) {
+    return 40 + rng() * 240;
+  }
+
+  function spawnCreature(rng, cfg, dist) {
+    return { x: randomX(rng), dist, targetX: randomX(rng), glintTimer: cfg.glint, glintVisible: 0, frozen: false };
+  }
+
+  function createGame(cfg, seed) {
+    return {
+      cfg,
+      rng: mulberry32(seed || 1976),
+      phase: 'attract',
+      phaseTime: 0,
+      night: 0,
+      score: 0,
+      vf: { x: (SCREEN - cfg.vfW) / 2, y: (SCREEN - cfg.vfH) / 2, w: cfg.vfW, h: cfg.vfH },
+      creatures: [],
+      film: 0,
+      timeLeft: 0,
+      charge: 1,
+      blindTimer: 0,
+      flashTimer: 0,
+      photos: [],
+      lastPhotoTimer: 0,
+      settings: null,
+      heartTimer: 1,
+      snapTimer: 3,
+      endReason: null,
+    };
+  }
+
+  function startNight(s, night) {
+    const cfg = s.cfg;
+    s.night = night;
+    s.settings = nightSettings(night, cfg);
+    s.phase = 'play';
+    s.phaseTime = 0;
+    s.film = cfg.film;
+    s.timeLeft = s.settings.nightTime;
+    s.charge = 1;
+    s.blindTimer = 0;
+    s.flashTimer = 0;
+    s.photos = [];
+    s.lastPhotoTimer = 0;
+    s.endReason = null;
+    s.creatures = [];
+    for (let i = 0; i < s.settings.count; i++) s.creatures.push(spawnCreature(s.rng, cfg, 0.9));
+    // 開場先把觀景窗對準第一隻，讓玩家第一眼就看到「框住它就不動」
+    const eye = eyePoint(s.creatures[0], cfg);
+    s.vf.x = clamp(eye.x - s.vf.w / 2, 0, SCREEN - s.vf.w);
+    s.vf.y = clamp(eye.y - s.vf.h / 2, 0, SCREEN - s.vf.h);
+  }
+
+  function endGame(s, reason, events) {
+    s.phase = 'gameover';
+    s.phaseTime = 0;
+    s.endReason = reason;
+    events.push(reason === 'caught' ? 'caught' : 'lose');
+  }
+
+  function takePhoto(s, events) {
+    const cfg = s.cfg;
+    const rects = s.creatures.map((c) => creatureRect(c, cfg));
+    let best = null;
+    for (const r of rects) {
+      const g = gradePhoto(s.vf, r, cfg);
+      if (!best || g.score > best.score) best = g;
+    }
+    const photo = { vf: Object.assign({}, s.vf), rects, grade: best.grade, score: best.score };
+    s.photos.push(photo);
+    s.score += photo.score;
+    s.film -= 1;
+    s.charge = 0;
+    s.blindTimer = cfg.blind;
+    s.flashTimer = 0.15;
+    s.lastPhotoTimer = 1.5;
+    for (const c of s.creatures) {
+      c.dist = cfg.retreat;
+      c.x = randomX(s.rng);
+      c.targetX = randomX(s.rng);
+    }
+    events.push('shot');
+    if (photo.grade === 'EVIDENCE') {
+      s.score += 100;
+      s.phase = 'develop';
+      s.phaseTime = 0;
+      events.push('win');
+    } else if (s.film <= 0) {
+      endGame(s, 'nofilm', events);
+    }
+  }
+
+  function playStep(s, input, dt, events) {
+    const cfg = s.cfg;
+    const st = s.settings;
+
+    let dx = input.dx || 0;
+    let dy = input.dy || 0;
+    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+    s.vf.x = clamp(s.vf.x + dx * cfg.vfSpeed * dt, 0, SCREEN - s.vf.w);
+    s.vf.y = clamp(s.vf.y + dy * cfg.vfSpeed * dt, 0, SCREEN - s.vf.h);
+
+    s.timeLeft -= dt;
+    s.blindTimer = Math.max(0, s.blindTimer - dt);
+    s.flashTimer = Math.max(0, s.flashTimer - dt);
+    s.lastPhotoTimer = Math.max(0, s.lastPhotoTimer - dt);
+    if (s.charge < 1) s.charge = Math.min(1, s.charge + dt / cfg.charge);
+
+    let anyMoving = false;
+    for (const c of s.creatures) {
+      c.frozen = isFrozen(c, s.vf, s.blindTimer, cfg);
+      c.glintVisible = Math.max(0, c.glintVisible - dt);
+      if (c.frozen) continue;
+      anyMoving = true;
+      c.dist = Math.max(0, c.dist - st.approach * dt);
+      const toTarget = c.targetX - c.x;
+      const stepX = st.lateral * dt;
+      if (Math.abs(toTarget) <= stepX) {
+        c.x = c.targetX;
+        c.targetX = randomX(s.rng);
+      } else {
+        c.x += Math.sign(toTarget) * stepX;
+      }
+      c.glintTimer -= dt;
+      if (c.glintTimer <= 0) {
+        c.glintTimer = cfg.glint;
+        c.glintVisible = cfg.glintOn;
+        events.push('glint');
+      }
+    }
+
+    const nearest = Math.min(...s.creatures.map((c) => c.dist));
+    s.heartTimer -= dt;
+    if (s.heartTimer <= 0) {
+      s.heartTimer = 0.3 + 0.7 * nearest;
+      events.push('heartbeat');
+    }
+    if (anyMoving) {
+      s.snapTimer -= dt;
+      if (s.snapTimer <= 0) {
+        s.snapTimer = 2 + s.rng() * 2;
+        events.push('snap');
+      }
+    }
+
+    if (nearest <= 0) { endGame(s, 'caught', events); return; }
+
+    if (input.fire && s.charge >= 1 && s.blindTimer <= 0 && s.film > 0) takePhoto(s, events);
+    if (s.phase !== 'play') return;
+
+    if (s.timeLeft <= 0) endGame(s, 'dawn', events);
+  }
+
+  function step(s, input, dt) {
+    const events = [];
+    s.phaseTime += dt;
+    if (s.phase === 'attract') {
+      if (input.fire) {
+        s.score = 0;
+        startNight(s, 1);
+        events.push('start');
+      }
+      return events;
+    }
+    if (s.phase === 'develop') {
+      if (input.fire && s.phaseTime > 0.5) {
+        startNight(s, s.night + 1);
+        events.push('start');
+      }
+      return events;
+    }
+    if (s.phase === 'gameover') {
+      if (input.fire && s.phaseTime > 1.5) {
+        s.phase = 'attract';
+        s.phaseTime = 0;
+      }
+      return events;
+    }
+    playStep(s, input, dt, events);
+    return events;
+  }
+
+  function bestPhoto(s) {
+    return s.photos.reduce((b, p) => (!b || p.score > b.score ? p : b), null);
+  }
+
   const API = {
     SCREEN, HORIZON_Y, FEET_NEAR_Y, DEFAULTS,
     makeConfig, mulberry32, clamp,
     creatureRect, eyePoint, isFrozen, gradePhoto, nightSettings,
+    createGame, startNight, step, bestPhoto,
   };
 
   if (typeof module === 'object' && module.exports) module.exports = API;

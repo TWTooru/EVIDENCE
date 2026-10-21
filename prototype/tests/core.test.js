@@ -63,3 +63,110 @@ test('night 3 brings two creatures and faster approach', () => {
   assert.equal(C.nightSettings(1, cfg).nightTime, 60);
   assert.equal(C.nightSettings(5, cfg).nightTime, 50);
 });
+
+function playing(seed, overrides) {
+  const s = C.createGame(C.makeConfig(overrides), seed || 1);
+  C.step(s, { fire: true }, 0);
+  return s;
+}
+
+test('fire in attract starts night 1 with the viewfinder on the creature', () => {
+  const s = playing();
+  assert.equal(s.phase, 'play');
+  assert.equal(s.night, 1);
+  assert.equal(s.creatures.length, 1);
+  assert.equal(s.film, 3);
+  assert.equal(C.isFrozen(s.creatures[0], s.vf, 0, s.cfg), true);
+});
+
+test('a watched creature does not move; an unwatched one approaches', () => {
+  const s = playing();
+  const c = s.creatures[0];
+  const d0 = c.dist;
+  const x0 = c.x;
+  C.step(s, {}, 1);
+  assert.equal(c.dist, d0);
+  assert.equal(c.x, x0);
+  s.vf.x = c.x > 160 ? 0 : C.SCREEN - s.vf.w;
+  s.vf.y = 0;
+  C.step(s, {}, 0.5);
+  assert.ok(Math.abs(c.dist - (d0 - s.settings.approach * 0.5)) < 1e-9);
+});
+
+test('shutter uses film, pushes the creature back, blinds and drains charge', () => {
+  const s = playing();
+  C.step(s, { fire: true }, 0.01);
+  assert.equal(s.film, 2);
+  assert.equal(s.photos.length, 1);
+  assert.equal(s.creatures[0].dist, s.cfg.retreat);
+  assert.equal(s.blindTimer, s.cfg.blind);
+  assert.equal(s.charge, 0);
+  C.step(s, { fire: true }, 0.01);
+  assert.equal(s.film, 2, 'cannot shoot while blind or uncharged');
+});
+
+test('using all film without evidence ends the game', () => {
+  const s = playing();
+  for (let i = 0; i < 3; i++) {
+    s.charge = 1;
+    s.blindTimer = 0;
+    C.step(s, { fire: true }, 0.01);
+  }
+  assert.equal(s.phase, 'gameover');
+  assert.equal(s.endReason, 'nofilm');
+});
+
+test('an EVIDENCE photo clears the night, and fire starts the next night', () => {
+  const s = playing();
+  const c = s.creatures[0];
+  c.dist = 0.25;
+  c.x = 160;
+  c.targetX = 160;
+  const r = C.creatureRect(c, s.cfg);
+  s.vf.x = r.x - 20;
+  s.vf.y = r.y - 5;
+  const ev = C.step(s, { fire: true }, 0.001);
+  assert.ok(ev.includes('win'));
+  assert.equal(s.phase, 'develop');
+  assert.equal(C.bestPhoto(s).grade, 'EVIDENCE');
+  C.step(s, {}, 1);
+  C.step(s, { fire: true }, 0.01);
+  assert.equal(s.phase, 'play');
+  assert.equal(s.night, 2);
+});
+
+test('a creature reaching the player ends the game, then fire returns to attract', () => {
+  const s = playing();
+  const c = s.creatures[0];
+  c.dist = 0.001;
+  c.x = 300;
+  c.targetX = 300;
+  s.vf.x = 0;
+  s.vf.y = 0;
+  const ev = C.step(s, {}, 0.1);
+  assert.equal(s.phase, 'gameover');
+  assert.equal(s.endReason, 'caught');
+  assert.ok(ev.includes('caught'));
+  C.step(s, {}, 2);
+  C.step(s, { fire: true }, 0.01);
+  assert.equal(s.phase, 'attract');
+});
+
+test('dawn without evidence ends the game', () => {
+  const s = playing();
+  s.timeLeft = 0.05;
+  C.step(s, {}, 0.1);
+  assert.equal(s.phase, 'gameover');
+  assert.equal(s.endReason, 'dawn');
+});
+
+test('the viewfinder moves at vfSpeed and stays on screen', () => {
+  const s = playing();
+  s.vf.x = 100;
+  s.vf.y = 100;
+  C.step(s, { dx: 1 }, 0.5);
+  assert.equal(s.vf.x, 100 + s.cfg.vfSpeed * 0.5);
+  C.step(s, { dx: -1 }, 10);
+  assert.equal(s.vf.x, 0);
+});
+
