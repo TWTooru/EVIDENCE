@@ -205,9 +205,8 @@ a { color: inherit; text-decoration: none; }
 }
 .hero-card canvas {
   width: 100%;
-  max-width: 320px;
+  max-width: 340px;
   aspect-ratio: 1;
-  image-rendering: pixelated;
   border: 2px solid var(--white);
   display: block;
 }
@@ -366,18 +365,14 @@ h2 {
 
 /* BEFORE / AFTER COMPARISON */
 .refine-item {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 28px;
-  padding: 34px;
+  padding: 36px;
   background: var(--panel);
   border: 1px solid var(--line);
-  margin-top: 22px;
-  align-items: center;
+  margin-top: 28px;
 }
 .refine-badge {
   display: inline-block;
-  padding: 3px 10px;
+  padding: 4px 12px;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: .12em;
@@ -386,42 +381,97 @@ h2 {
   margin-bottom: 10px;
 }
 .refine-item h3 {
-  margin: 0 0 12px;
-  font-size: 24px;
+  margin: 0 0 10px;
+  font-size: 26px;
 }
 .ba-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 16px;
+  gap: 22px;
+  margin-top: 22px;
 }
 .ba-box {
-  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
   background: #0a0c11;
-  border-left: 3px solid var(--muted);
-  font-size: 14.5px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--muted);
+  overflow: hidden;
 }
 .ba-box.after {
-  border-left-color: var(--yellow);
+  border-top-color: var(--yellow);
 }
-.ba-box strong {
-  display: block;
-  font-size: 11px;
-  letter-spacing: .12em;
-  color: var(--muted);
-  margin-bottom: 4px;
+.ba-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: #0d1017;
+  border-bottom: 1px solid var(--line);
 }
-.ba-box.after strong {
+.ba-head strong {
+  font-size: 13px;
+  letter-spacing: .1em;
+  color: var(--white);
+}
+.ba-box.after .ba-head strong {
   color: var(--yellow);
+}
+.ba-tag {
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--white);
+  border: 1px solid var(--line);
+}
+.ba-tag.bad {
+  background: rgba(255, 42, 42, 0.14);
+  color: #ff6b6b;
+  border-color: rgba(255, 42, 42, 0.4);
+}
+.ba-tag.good {
+  background: rgba(255, 176, 0, 0.16);
+  color: var(--yellow);
+  border-color: rgba(255, 176, 0, 0.5);
 }
 .diagram-canvas {
   width: 100%;
-  max-width: 300px;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 10;
   background: #000;
-  border: 2px solid var(--blue);
-  image-rendering: pixelated;
+  border-bottom: 1px solid var(--line);
   display: block;
+}
+.ba-callouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 18px 0;
+}
+.ba-pill {
+  font-family: "Courier New", monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: #050608;
+  border: 1px solid var(--line);
+  color: #d5dbe7;
+}
+.ba-pill.red {
+  border-color: var(--red);
+  color: var(--red);
+}
+.ba-pill.yellow {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+.ba-desc {
+  padding: 14px 18px 18px;
+  font-size: 15px;
+  color: #cfd5e2;
+  line-height: 1.65;
 }
 
 /* TABLE */
@@ -728,68 +778,126 @@ h2 {
 
       <!-- REFINE 01 -->
       <div class="refine-item">
-        <div>
-          <span class="refine-badge">ITERATION 01 · 取景回饋與準星陷阱</span>
-          <h3>為什麼玩家一直 OUT OF FILM？</h3>
-          <p style="color:#cfd5e2">
-            測試發現：紅眼位於頭頂（12% 高度處），當玩家直覺把「十字準星」對準紅眼時，「它」的下半身會有約 30px 露在觀景窗底邊外，導致完整度永遠卡在 70%（未達 95% 門檻）。而且拍之前完全不知道現在按快門會不會過。
-          </p>
-          <div class="ba-grid">
-            <div class="ba-box">
-              <strong>BEFORE（初版問題）</strong>
-              觀景窗沒有任何距離或構圖提示；藍色準星容易融入背景。玩家看到它就盲按快門，連拍 3 張都是 <code>BLURRY</code> 或 <code>SUSPICIOUS</code>。
+        <span class="refine-badge">ITERATION 01 · 取景回饋與準星陷阱</span>
+        <h3>為什麼玩家一直 OUT OF FILM？</h3>
+        <p style="color:#cfd5e2;margin:0">
+          測試發現：紅眼位於頭頂（12% 高度處），當玩家直覺把「十字準星」對準紅眼時，「它」的下半身會有約 30px 露在觀景窗底邊外，導致完整度永遠卡在 70%（未達 95% 門檻）。而且拍之前完全不知道現在按快門會不會過。
+        </p>
+        <div class="ba-grid">
+          <div class="ba-box">
+            <div class="ba-head">
+              <strong>BEFORE · 初版問題（準星對紅眼 → 雙腿切出框外）</strong>
+              <span class="ba-tag bad">SUSPICIOUS · 完整度 70%</span>
             </div>
-            <div class="ba-box after">
-              <strong>AFTER（決定留下的門檻 ＋ 新增回饋）</strong>
-              <strong>保留嚴格的 85% 大小 × 95% 完整度門檻</strong>，但將準星改為醒目琥珀黃，並在觀景窗下方新增即時狀態：<code>TOO FAR (XX%)</code> → <code>FIT FULL BODY</code> → 紅框 <code>EVIDENCE READY!</code>。
+            <canvas id="diagAimBefore" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill">藍色準星對準頭頂紅眼</span>
+              <span class="ba-pill red">下半身 30px 露在框外（紅虛線區）</span>
+              <span class="ba-pill">無任何距離/構圖提示</span>
+            </div>
+            <div class="ba-desc">
+              觀景窗沒有任何距離或構圖提示；藍色準星容易融入背景。玩家看到紅眼就對準中心盲按快門，連拍 3 張都是 <code>BLURRY</code> 或 <code>SUSPICIOUS</code>。
+            </div>
+          </div>
+
+          <div class="ba-box after">
+            <div class="ba-head">
+              <strong>AFTER · 保留嚴格門檻 ＋ 琥珀黃準星與即時提示</strong>
+              <span class="ba-tag good">EVIDENCE READY! · 完整度 98%</span>
+            </div>
+            <canvas id="diagAimAfter" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill">階段 1：TOO FAR (62%)</span>
+              <span class="ba-pill">階段 2：FIT FULL BODY</span>
+              <span class="ba-pill red">階段 3：紅框 EVIDENCE READY!</span>
+            </div>
+            <div class="ba-desc">
+              <strong>保留嚴格的 85% 大小 × 95% 完整度門檻</strong>，將準星改為醒目琥珀黃（<code>#ffb000</code>），並在觀景窗下方新增三段式即時狀態，引導玩家把框往下拉納入全身。
             </div>
           </div>
         </div>
-        <canvas id="diagAim" class="diagram-canvas" width="240" height="240"></canvas>
       </div>
 
       <!-- REFINE 02 -->
       <div class="refine-item">
-        <div>
-          <span class="refine-badge">ITERATION 02 · 閃光分段逼退與關卡節奏</span>
-          <h3>拍完一張要重等 10.5 秒太拖沓</h3>
-          <p style="color:#cfd5e2">
-            初版每按一次快門，不論「它」原本多近，都會被直接重置回最遠處（<code>dist = 0.95</code>）。以初速計算，玩家必須移開視線乾等 10.5 秒才能再拍下一張，節奏過於斷裂。
-          </p>
-          <div class="ba-grid">
-            <div class="ba-box">
-              <strong>BEFORE（初版問題）</strong>
-              閃光一律重置回 <code>dist = 0.95</code>；且各晚節奏差異只靠單一乘數。
+        <span class="refine-badge">ITERATION 02 · 閃光分段逼退與關卡節奏</span>
+        <h3>拍完一張要重等 10.5 秒太拖沓</h3>
+        <p style="color:#cfd5e2;margin:0">
+          初版每按一次快門，不論「它」原本多近，都會被直接重置回最遠處（<code>dist = 0.95</code>）。以初速計算，玩家必須移開視線乾等 10.5 秒才能再拍下一張，節奏過於斷裂。
+        </p>
+        <div class="ba-grid">
+          <div class="ba-box">
+            <div class="ba-head">
+              <strong>BEFORE · 閃光一律重置回最遠處（dist = 0.95）</strong>
+              <span class="ba-tag bad">需乾等 10.5 秒</span>
             </div>
-            <div class="ba-box after">
-              <strong>AFTER（分段逼退 ＋ 逐晚加速）</strong>
-              閃光改為<strong>往後退一段距離（<code>+0.35</code>）</strong>而非退回最遠處；第 1 晚維持平緩教學步調，第 2 晚起逐步加快逼近速度、縮短逼退距離與紅眼閃光間隔。
+            <canvas id="diagRetreatBefore" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill">快門位置：dist 0.35</span>
+              <span class="ba-pill red">強制退回：dist 0.95（森林最深處）</span>
+              <span class="ba-pill">壓迫感完全歸零</span>
+            </div>
+            <div class="ba-desc">
+              閃光無條件重置回 <code>dist = 0.95</code>，前兩張防禦性快門與最後一張決戰完全脫節；且各晚節奏差異只靠單一乘數。
+            </div>
+          </div>
+
+          <div class="ba-box after">
+            <div class="ba-head">
+              <strong>AFTER · 分段擊退一步（+0.35）＋ 逐晚加速</strong>
+              <span class="ba-tag good">5.5 秒重回證據距離</span>
+            </div>
+            <canvas id="diagRetreatAfter" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill yellow">快門擊退：dist 0.35 → 0.70（中距離）</span>
+              <span class="ba-pill">Night 1 教學步調 → Night 3+ 高壓雙怪</span>
+            </div>
+            <div class="ba-desc">
+              閃光改為<strong>往後退一段距離（<code>+0.35</code>）</strong>而非退回最遠處，維持中距離緊繃感；第 1 晚維持平緩教學步調，第 2 晚起逐步加快逼近速度、縮短逼退距離與紅眼閃爍間隔。
             </div>
           </div>
         </div>
-        <canvas id="diagRetreat" class="diagram-canvas" width="240" height="240"></canvas>
       </div>
 
       <!-- REFINE 03 -->
       <div class="refine-item">
-        <div>
-          <span class="refine-badge">ITERATION 03 · 場景視覺與前後景深度遮蔽</span>
-          <h3>從「四條藍色直線」到「可躲藏的針葉林」</h3>
-          <p style="color:#cfd5e2">
-            初版為了極簡，用四條從頂到底的藍色垂直長條代表樹木，視覺上像鐵欄杆而非森林，也無法呈現「它在樹後穿梭」的空間深度。
-          </p>
-          <div class="ba-grid">
-            <div class="ba-box">
-              <strong>BEFORE（初版問題）</strong>
-              4 條貫穿全畫面的 <code>fillRect</code> 垂直藍線，沒有樹冠與地平線樹林，深度固定。
+        <span class="refine-badge">ITERATION 03 · 場景視覺與前後景深度遮蔽</span>
+        <h3>從「四條藍色直線」到「可躲藏的針葉林」</h3>
+        <p style="color:#cfd5e2;margin:0">
+          初版為了極簡，用四條從頂到底的藍色垂直長條代表樹木，視覺上像鐵欄杆而非森林，也無法呈現「它在樹後穿梭」的空間深度。
+        </p>
+        <div class="ba-grid">
+          <div class="ba-box">
+            <div class="ba-head">
+              <strong>BEFORE · 貫穿畫面的藍色直線</strong>
+              <span class="ba-tag bad">像鐵欄杆 · 無前後景深度</span>
             </div>
-            <div class="ba-box after">
-              <strong>AFTER（五層階梯松樹 ＋ 真實深度排序）</strong>
+            <canvas id="diagTreesBefore" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill red">4 條純 fillRect 垂直藍柱</span>
+              <span class="ba-pill">無樹冠與地平線樹林</span>
+              <span class="ba-pill">圖層固定無遮蔽變化</span>
+            </div>
+            <div class="ba-desc">
+              4 條貫穿全畫面的 <code>fillRect</code> 垂直藍線，沒有樹冠與地平線樹林，視覺上缺乏森林幽暗感與前後空間關係。
+            </div>
+          </div>
+
+          <div class="ba-box after">
+            <div class="ba-head">
+              <strong>AFTER · 五層階梯松樹 ＋ 動態深度排序</strong>
+              <span class="ba-tag good">真實前後遮擋 (Depth Sort)</span>
+            </div>
+            <canvas id="diagTreesAfter" class="diagram-canvas" width="320" height="200"></canvas>
+            <div class="ba-callouts">
+              <span class="ba-pill yellow">地平線遠方樹林 ＋ 5 層階梯松冠</span>
+              <span class="ba-pill">遠處躲在樹後 · 靠近走出樹前</span>
+            </div>
+            <div class="ba-desc">
               重繪地平線遠方樹林剪影＋ 4 棵具樹幹、樹根與 5 層階梯針葉冠的松樹，並依 <code>dist</code> 動態排序繪圖順序，讓「它」在遠處會真正躲在樹後、靠近時才走出樹前。
             </div>
           </div>
         </div>
-        <canvas id="diagTrees" class="diagram-canvas" width="240" height="240"></canvas>
       </div>
 
     </div>
@@ -1550,10 +1658,13 @@ h2 {
   const R = EvidenceRender;
   const PAL = R.PAL;
 
-  // 1. Hero animated preview
+  // 1. Hero animated preview (High-DPI)
   const heroCanvas = document.getElementById('heroPreview');
+  const heroDpr = Math.max(2, Math.ceil(window.devicePixelRatio || 2));
+  heroCanvas.width = 320 * heroDpr;
+  heroCanvas.height = 320 * heroDpr;
   const heroCtx = heroCanvas.getContext('2d');
-  heroCtx.imageSmoothingEnabled = false;
+  heroCtx.setTransform(heroDpr, 0, 0, heroDpr, 0, 0);
   const heroState = C.createGame(C.makeConfig(), 1976);
   C.startNight(heroState, 1);
   heroState.creatures[0].x = 160;
@@ -1563,92 +1674,247 @@ h2 {
   heroState.vf.y = Math.round(hr.y - 6);
   R.draw(heroCtx, heroState);
 
-  // 2. Diagram 1: Crosshair Trap vs Fit Full Body
-  const diagAim = document.getElementById('diagAim').getContext('2d');
-  diagAim.imageSmoothingEnabled = false;
-  diagAim.fillStyle = PAL.black;
-  diagAim.fillRect(0, 0, 240, 240);
-  // Left side: Before (crosshair on eyes -> legs cut off)
-  R.text(diagAim, 'BEFORE: CUT OFF', 60, 12, PAL.white, 9, 'center');
-  diagAim.fillStyle = PAL.white;
-  diagAim.fillRect(18, 34, 84, 102);
-  const rLeft = { x: 46, y: 72, w: 28, h: 94 };
-  R.drawSilhouette(diagAim, rLeft, PAL.black, 0, 0, 1);
-  R.drawEyes(diagAim, rLeft, PAL.red, 0, 0, 1);
-  diagAim.fillStyle = PAL.black;
-  diagAim.fillRect(18, 136, 84, 42);
-  diagAim.strokeStyle = PAL.red;
-  diagAim.setLineDash([3, 3]);
-  diagAim.strokeRect(46, 136, 28, 30);
-  diagAim.setLineDash([]);
-  diagAim.strokeStyle = PAL.white;
-  diagAim.strokeRect(18.5, 34.5, 83, 101);
-  R.text(diagAim, 'SUSPICIOUS (70%)', 60, 180, PAL.white, 8, 'center');
-  R.text(diagAim, 'LEGS OUTSIDE!', 60, 194, PAL.red, 8, 'center');
+  // Helper: Setup high-DPI 320x200 logical diagram canvas
+  function setupDiag(id) {
+    const c = document.getElementById(id);
+    const dpr = Math.max(2, Math.ceil(window.devicePixelRatio || 2));
+    c.width = 320 * dpr;
+    c.height = 200 * dpr;
+    const dctx = c.getContext('2d');
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dctx.fillStyle = PAL.black;
+    dctx.fillRect(0, 0, 320, 200);
+    return dctx;
+  }
 
-  // Right side: After (yellow crosshair + EVIDENCE READY!)
-  R.text(diagAim, 'AFTER: READY HINT', 180, 12, PAL.yellow, 9, 'center');
-  diagAim.fillStyle = PAL.white;
-  diagAim.fillRect(138, 34, 84, 102);
-  const rRight = { x: 166, y: 38, w: 28, h: 94 };
-  R.drawSilhouette(diagAim, rRight, PAL.black, 0, 0, 1);
-  R.drawEyes(diagAim, rRight, PAL.red, 0, 0, 1);
-  diagAim.strokeStyle = PAL.red;
-  diagAim.lineWidth = 2;
-  diagAim.strokeRect(138.5, 34.5, 83, 101);
-  diagAim.lineWidth = 1;
-  diagAim.fillStyle = PAL.yellow;
-  diagAim.fillRect(180 - 3, 85, 7, 1);
-  diagAim.fillRect(180, 85 - 3, 1, 7);
-  diagAim.fillStyle = PAL.black;
-  diagAim.fillRect(138, 140, 84, 12);
-  R.text(diagAim, 'EVIDENCE READY!', 180, 142, PAL.red, 8, 'center');
-  R.text(diagAim, 'EVIDENCE (98%)', 180, 180, PAL.red, 8, 'center');
+  // 2A. Diagram 1 BEFORE: Crosshair on eyes -> lower legs cut off outside viewfinder
+  {
+    const dc = setupDiag('diagAimBefore');
+    // Subtle pine background in dark blue
+    dc.fillStyle = PAL.blue;
+    dc.fillRect(0, 96, 320, 1);
+    R.drawPine(dc, { x: 64, baseY: 160, h: 110, w: 34 }, PAL.blue);
+    R.drawPine(dc, { x: 256, baseY: 168, h: 120, w: 38 }, PAL.blue);
 
-  // 3. Diagram 2: Step Retreat (+0.35) vs Reset (0.95)
-  const diagRetreat = document.getElementById('diagRetreat').getContext('2d');
-  diagRetreat.imageSmoothingEnabled = false;
-  diagRetreat.fillStyle = PAL.black;
-  diagRetreat.fillRect(0, 0, 240, 240);
-  R.text(diagRetreat, 'DISTANCE TIMELINE (0.95 -> 0.25)', 120, 14, PAL.yellow, 9, 'center');
-  // Before bar
-  R.text(diagRetreat, 'BEFORE: RESET TO 0.95 (WAIT 10.5s)', 20, 48, PAL.white, 8, 'left');
-  diagRetreat.strokeStyle = PAL.blue;
-  diagRetreat.strokeRect(20.5, 64.5, 200, 18);
-  diagRetreat.fillStyle = PAL.red;
-  diagRetreat.fillRect(35, 68, 175, 10);
-  R.text(diagRetreat, 'SHOT @ 0.35 -----> BACK TO 0.95', 120, 90, PAL.white, 8, 'center');
-  // After bar
-  R.text(diagRetreat, 'AFTER: STEP RETREAT +0.35 (WAIT 5.5s)', 20, 132, PAL.yellow, 8, 'left');
-  diagRetreat.strokeStyle = PAL.blue;
-  diagRetreat.strokeRect(20.5, 148.5, 200, 18);
-  diagRetreat.fillStyle = PAL.yellow;
-  diagRetreat.fillRect(35, 152, 95, 10);
-  R.text(diagRetreat, 'SHOT @ 0.35 --> 0.70 (KEEP TENSION)', 120, 174, PAL.yellow, 8, 'center');
+    // Viewfinder centered on eye level (y=72)
+    const vf = { x: 110, y: 18, w: 100, h: 112 };
+    const r = { x: 144, y: 58, w: 32, h: 108 }; // Bottom is at y=166 (36px outside vf bottom y=130!)
 
-  // 4. Diagram 3: Blue Bars vs Layered Pine Forest
-  const diagTrees = document.getElementById('diagTrees').getContext('2d');
-  diagTrees.imageSmoothingEnabled = false;
-  diagTrees.fillStyle = PAL.black;
-  diagTrees.fillRect(0, 0, 240, 240);
-  R.text(diagTrees, 'BEFORE: BARS', 60, 12, PAL.white, 9, 'center');
-  diagTrees.fillStyle = PAL.blue;
-  diagTrees.fillRect(10, 110, 100, 1);
-  diagTrees.fillRect(28, 30, 12, 190);
-  diagTrees.fillRect(76, 30, 10, 190);
+    // Illuminated viewfinder interior
+    dc.fillStyle = PAL.white;
+    dc.fillRect(vf.x, vf.y, vf.w, vf.h);
 
-  R.text(diagTrees, 'AFTER: PINE DEPTH', 180, 12, PAL.yellow, 9, 'center');
-  diagTrees.save();
-  diagTrees.beginPath();
-  diagTrees.rect(125, 28, 105, 195);
-  diagTrees.clip();
-  diagTrees.fillStyle = PAL.blue;
-  diagTrees.fillRect(125, 110, 105, 2);
-  R.drawSilhouette(diagTrees, { x: 168, y: 88, w: 22, h: 72 }, PAL.white, 0, 0, 1);
-  R.drawEyes(diagTrees, { x: 168, y: 88, w: 22, h: 72 }, PAL.red, 0, 0, 1);
-  R.drawPine(diagTrees, { x: 160, baseY: 185, h: 120, w: 36 }, PAL.blue);
-  R.drawPine(diagTrees, { x: 204, baseY: 205, h: 145, w: 42 }, PAL.blue);
-  diagTrees.restore();
+    // Draw creature inside viewfinder
+    dc.save();
+    dc.beginPath();
+    dc.rect(vf.x, vf.y, vf.w, vf.h);
+    dc.clip();
+    R.drawSilhouette(dc, r, PAL.black, 0, 0, 1);
+    R.drawEyes(dc, r, PAL.red, 0, 0, 1);
+    dc.restore();
+
+    // Draw cut-off legs below viewfinder in red dashed outline
+    dc.save();
+    dc.beginPath();
+    dc.rect(0, vf.y + vf.h, 320, 200 - (vf.y + vf.h));
+    dc.clip();
+    R.drawSilhouette(dc, r, '#3a1010', 0, 0, 1);
+    dc.restore();
+
+    dc.strokeStyle = PAL.red;
+    dc.lineWidth = 2;
+    dc.setLineDash([4, 3]);
+    dc.strokeRect(r.x - 4, vf.y + vf.h + 1, r.w + 8, (r.y + r.h) - (vf.y + vf.h) + 2);
+    dc.setLineDash([]);
+
+    // Viewfinder frame + old blue crosshair right on the eyes
+    dc.strokeStyle = PAL.white;
+    dc.lineWidth = 2;
+    dc.strokeRect(vf.x, vf.y, vf.w, vf.h);
+    const cx = vf.x + vf.w / 2;
+    const cy = vf.y + vf.h / 2;
+    dc.fillStyle = PAL.blue;
+    dc.fillRect(cx - 8, cy - 1, 16, 2);
+    dc.fillRect(cx - 1, cy - 8, 2, 16);
+  }
+
+  // 2B. Diagram 1 AFTER: Pull viewfinder down + Yellow crosshair + EVIDENCE READY!
+  {
+    const dc = setupDiag('diagAimAfter');
+    dc.fillStyle = PAL.blue;
+    dc.fillRect(0, 96, 320, 1);
+    R.drawPine(dc, { x: 64, baseY: 160, h: 110, w: 34 }, PAL.blue);
+    R.drawPine(dc, { x: 256, baseY: 168, h: 120, w: 38 }, PAL.blue);
+
+    // Viewfinder pulled down so full body (h=102) fits inside (vf.h=112)
+    const vf = { x: 110, y: 34, w: 100, h: 112 };
+    const r = { x: 144, y: 40, w: 32, h: 100 };
+
+    dc.fillStyle = PAL.white;
+    dc.fillRect(vf.x, vf.y, vf.w, vf.h);
+    R.drawSilhouette(dc, r, PAL.black, 0, 0, 1);
+    R.drawEyes(dc, r, PAL.red, 0, 0, 1);
+
+    // Red ready border + corners
+    dc.strokeStyle = PAL.red;
+    dc.lineWidth = 2.5;
+    dc.strokeRect(vf.x, vf.y, vf.w, vf.h);
+
+    // High-contrast Amber Yellow Crosshair (#ffb000)
+    const cx = vf.x + vf.w / 2;
+    const cy = vf.y + vf.h / 2;
+    dc.fillStyle = PAL.yellow;
+    dc.fillRect(cx - 8, cy - 1, 16, 2);
+    dc.fillRect(cx - 1, cy - 8, 2, 16);
+
+    // Crisp HUD readiness banner below viewfinder
+    dc.fillStyle = PAL.black;
+    dc.fillRect(vf.x, vf.y + vf.h + 6, vf.w, 18);
+    dc.strokeStyle = PAL.red;
+    dc.lineWidth = 1.5;
+    dc.strokeRect(vf.x, vf.y + vf.h + 6, vf.w, 18);
+    R.text(dc, 'EVIDENCE READY!', cx, vf.y + vf.h + 10, PAL.red, 10, 'center');
+  }
+
+  // 3A. Diagram 2 BEFORE: Reset all the way to 0.95
+  {
+    const dc = setupDiag('diagRetreatBefore');
+    // Track line from near (left x=45, dist=0.25) to far (right x=275, dist=0.95)
+    dc.strokeStyle = PAL.blue;
+    dc.lineWidth = 3;
+    dc.beginPath();
+    dc.moveTo(45, 115);
+    dc.lineTo(275, 115);
+    dc.stroke();
+
+    // Ticks for 0.25 (near), 0.35 (shot), 0.95 (far reset)
+    for (const tx of [45, 85, 275]) {
+      dc.fillStyle = PAL.white;
+      dc.fillRect(tx - 1.5, 107, 3, 16);
+    }
+    R.text(dc, 'dist 0.25', 45, 132, PAL.white, 10, 'center');
+    R.text(dc, 'dist 0.35', 85, 150, PAL.yellow, 10, 'center');
+    R.text(dc, 'dist 0.95', 275, 132, PAL.red, 10, 'center');
+
+    // Creature at shot position (x=85, large)
+    const rNear = { x: 85 - 12, y: 46, w: 24, h: 62 };
+    R.drawSilhouette(dc, rNear, PAL.white, 0, 0, 1);
+    R.drawEyes(dc, rNear, PAL.red, 0, 0, 1);
+
+    // Creature reset all the way to far right (x=275, tiny)
+    const rFar = { x: 275 - 4, y: 86, w: 8, h: 22 };
+    R.drawSilhouette(dc, rFar, PAL.blue, 0, 0, 1);
+    R.drawEyes(dc, rFar, PAL.red, 0, 0, 1);
+
+    // Long red knockback arrow from 85 -> 275
+    dc.strokeStyle = PAL.red;
+    dc.lineWidth = 3;
+    dc.beginPath();
+    dc.moveTo(106, 74);
+    dc.lineTo(258, 74);
+    dc.stroke();
+    dc.fillStyle = PAL.red;
+    dc.beginPath();
+    dc.moveTo(264, 74);
+    dc.lineTo(252, 67);
+    dc.lineTo(252, 81);
+    dc.closePath();
+    dc.fill();
+    R.text(dc, 'RESET TO 0.95 (-10.5s)', 182, 52, PAL.red, 11, 'center');
+  }
+
+  // 3B. Diagram 2 AFTER: Step Retreat (+0.35 -> dist 0.70)
+  {
+    const dc = setupDiag('diagRetreatAfter');
+    dc.strokeStyle = PAL.blue;
+    dc.lineWidth = 3;
+    dc.beginPath();
+    dc.moveTo(45, 115);
+    dc.lineTo(275, 115);
+    dc.stroke();
+
+    for (const tx of [45, 85, 185, 275]) {
+      dc.fillStyle = PAL.white;
+      dc.fillRect(tx - 1.5, 107, 3, 16);
+    }
+    R.text(dc, 'dist 0.25', 45, 132, PAL.white, 10, 'center');
+    R.text(dc, 'dist 0.35', 85, 150, PAL.white, 10, 'center');
+    R.text(dc, 'dist 0.70', 185, 132, PAL.yellow, 10, 'center');
+    R.text(dc, '0.95', 275, 132, PAL.blue, 10, 'center');
+
+    // Creature at shot position (x=85, large)
+    const rNear = { x: 85 - 12, y: 46, w: 24, h: 62 };
+    R.drawSilhouette(dc, rNear, PAL.white, 0, 0, 1);
+    R.drawEyes(dc, rNear, PAL.red, 0, 0, 1);
+
+    // Creature pushed back one step to x=185 (medium size, still menacing!)
+    const rMid = { x: 185 - 8, y: 66, w: 16, h: 42 };
+    R.drawSilhouette(dc, rMid, PAL.yellow, 0, 0, 1);
+    R.drawEyes(dc, rMid, PAL.red, 0, 0, 1);
+
+    // Medium yellow arrow from 85 -> 185
+    dc.strokeStyle = PAL.yellow;
+    dc.lineWidth = 3;
+    dc.beginPath();
+    dc.moveTo(106, 74);
+    dc.lineTo(166, 74);
+    dc.stroke();
+    dc.fillStyle = PAL.yellow;
+    dc.beginPath();
+    dc.moveTo(172, 74);
+    dc.lineTo(160, 67);
+    dc.lineTo(160, 81);
+    dc.closePath();
+    dc.fill();
+    R.text(dc, 'STEP +0.35 (-5.5s)', 140, 48, PAL.yellow, 11, 'center');
+  }
+
+  // 4A. Diagram 3 BEFORE: Vertical Blue Bars
+  {
+    const dc = setupDiag('diagTreesBefore');
+    dc.fillStyle = PAL.blue;
+    dc.fillRect(0, 95, 320, 1);
+    // Old vertical bars
+    dc.fillRect(46, 0, 16, 200);
+    dc.fillRect(114, 0, 12, 200);
+    dc.fillRect(202, 0, 18, 200);
+    dc.fillRect(268, 0, 14, 200);
+    // Creature just drawn on top of bars
+    const r = { x: 148, y: 68, w: 26, h: 78 };
+    R.drawSilhouette(dc, r, PAL.white, 0, 0, 1);
+    R.drawEyes(dc, r, PAL.red, 0, 0, 1);
+  }
+
+  // 4B. Diagram 3 AFTER: Layered Pine Forest + Depth Occlusion
+  {
+    const dc = setupDiag('diagTreesAfter');
+    // Distant horizon treeline
+    dc.fillStyle = PAL.blue;
+    dc.fillRect(0, 95, 320, 2);
+    for (let tx = 8; tx < 320; tx += 16) {
+      const th = 10 + ((tx * 7) % 10);
+      dc.fillRect(tx + 4, 95 - th, 4, th);
+      dc.fillRect(tx + 2, 95 - Math.floor(th * 0.7), 8, Math.floor(th * 0.5));
+      dc.fillRect(tx, 95 - Math.floor(th * 0.4), 12, Math.floor(th * 0.4));
+    }
+    // Midground pines
+    R.drawPine(dc, { x: 108, baseY: 148, h: 98, w: 34 }, PAL.blue);
+    R.drawPine(dc, { x: 218, baseY: 154, h: 106, w: 36 }, PAL.blue);
+
+    // Creature 1 (behind foreground left pine!)
+    const rBehind = { x: 64, y: 74, w: 24, h: 74 };
+    R.drawSilhouette(dc, rBehind, PAL.white, 0, 0, 1);
+    R.drawEyes(dc, rBehind, PAL.red, 0, 0, 1);
+
+    // Foreground pines (occluding Creature 1!)
+    R.drawPine(dc, { x: 54, baseY: 184, h: 148, w: 50 }, PAL.blue);
+    R.drawPine(dc, { x: 268, baseY: 188, h: 154, w: 52 }, PAL.blue);
+
+    // Creature 2 (stepped in front of midground pine!)
+    const rFront = { x: 162, y: 56, w: 30, h: 96 };
+    R.drawSilhouette(dc, rFront, PAL.white, 0, 0, 1);
+    R.drawEyes(dc, rFront, PAL.red, 0, 0, 1);
+  }
 
   // 5. Live Playable Arcade Cabinet
   const cfg = C.makeConfig();
