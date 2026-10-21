@@ -1,0 +1,210 @@
+/* EVIDENCE 1976 — canvas renderer. Strict 4-color palette, logical 320x320. */
+(function (root) {
+  'use strict';
+
+  const C = root.EvidenceCore || (typeof require === 'function' ? require('./evidence-core.js') : null);
+  const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a' };
+  const S = C.SCREEN;
+  const TREES = [{ x: 30, w: 14 }, { x: 110, w: 10 }, { x: 215, w: 12 }, { x: 285, w: 16 }];
+  const GRADE_TEXT = { EVIDENCE: 'EVIDENCE', SUSPICIOUS: 'SUSPICIOUS', BLURRY: 'BLURRY' };
+
+  function text(ctx, str, x, y, color, size, align) {
+    ctx.fillStyle = color;
+    ctx.font = 'bold ' + (size || 10) + 'px "Courier New", monospace';
+    ctx.textAlign = align || 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(str, x, y);
+  }
+
+  function drawScenery(ctx, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, C.HORIZON_Y, S, 1);
+    for (const t of TREES) ctx.fillRect(t.x - t.w / 2, 0, t.w, S);
+  }
+
+  // r: 身體外框 {x,y,w,h}；ox, oy, k: 平移與縮放（給照片縮圖用）
+  function drawSilhouette(ctx, r, color, ox, oy, k) {
+    const X = (v) => ox + v * k;
+    const Y = (v) => oy + v * k;
+    const headH = r.h * 0.22;
+    const torsoH = r.h * 0.45;
+    const legH = r.h - headH - torsoH;
+    ctx.fillStyle = color;
+    ctx.fillRect(X(r.x + r.w * 0.2), Y(r.y), r.w * 0.6 * k, headH * k);
+    ctx.fillRect(X(r.x), Y(r.y + headH), r.w * k, torsoH * k);
+    ctx.fillRect(X(r.x + r.w * 0.05), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+    ctx.fillRect(X(r.x + r.w * 0.65), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+  }
+
+  function drawEyes(ctx, r, color, ox, oy, k) {
+    const cx = r.x + r.w / 2;
+    const ey = r.y + r.h * 0.12;
+    const size = Math.max(1, r.w * 0.12) * k;
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + (cx - r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
+    ctx.fillRect(ox + (cx + r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
+  }
+
+  function byDistance(creatures) {
+    return creatures.slice().sort((a, b) => b.dist - a.dist);
+  }
+
+  function drawPhoto(ctx, photo, x, y, k) {
+    const vf = photo.vf;
+    const ox = x - vf.x * k;
+    const oy = y - vf.y * k;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, vf.w * k, vf.h * k);
+    ctx.clip();
+    ctx.fillStyle = PAL.white;
+    ctx.fillRect(x, y, vf.w * k, vf.h * k);
+    const sorted = photo.rects.slice().sort((a, b) => a.h - b.h);
+    for (const r of sorted) {
+      drawSilhouette(ctx, r, PAL.black, ox, oy, k);
+      drawEyes(ctx, r, PAL.red, ox, oy, k);
+    }
+    ctx.restore();
+    ctx.strokeStyle = PAL.white;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 2.5, y - 2.5, vf.w * k + 5, vf.h * k + 5);
+    const gradeColor = photo.grade === 'EVIDENCE' ? PAL.red : PAL.white;
+    text(ctx, GRADE_TEXT[photo.grade] + ' ' + photo.score, x + (vf.w * k) / 2, y + vf.h * k + 6, gradeColor, 8, 'center');
+  }
+
+  function drawHud(ctx, s) {
+    ctx.fillStyle = PAL.black;
+    ctx.fillRect(0, 0, S, 14);
+    text(ctx, 'NIGHT ' + s.night, 6, 3, PAL.white, 9);
+    text(ctx, 'DAWN ' + Math.max(0, Math.ceil(s.timeLeft)), S - 6, 3, PAL.white, 9, 'right');
+    text(ctx, 'SCORE ' + s.score, S / 2, 3, PAL.blue, 9, 'center');
+
+    for (let i = 0; i < s.cfg.film; i++) {
+      ctx.fillStyle = i < s.film ? PAL.white : PAL.blue;
+      ctx.fillRect(6 + i * 12, S - 16, 8, 10);
+    }
+    ctx.strokeStyle = PAL.white;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(S - 52.5, S - 13.5, 46, 6);
+    ctx.fillStyle = s.charge >= 1 ? PAL.red : PAL.white;
+    ctx.fillRect(S - 51, S - 12, 43 * s.charge, 3);
+
+    const last = s.photos[s.photos.length - 1];
+    if (s.lastPhotoTimer > 0 && last) drawPhoto(ctx, last, S - 52, S - 92, 0.4);
+  }
+
+  function drawDebug(ctx, s) {
+    s.creatures.forEach((c, i) => {
+      text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
+    });
+  }
+
+  function drawPlay(ctx, s) {
+    const cfg = s.cfg;
+    const vf = s.vf;
+    ctx.fillStyle = PAL.black;
+    ctx.fillRect(0, 0, S, S);
+    drawScenery(ctx, PAL.blue);
+    for (const c of s.creatures) {
+      if (c.glintVisible > 0) drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1);
+    }
+
+    const lit = s.blindTimer <= 0;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(vf.x, vf.y, vf.w, vf.h);
+    ctx.clip();
+    if (lit) {
+      ctx.fillStyle = PAL.white;
+      ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
+      drawScenery(ctx, PAL.blue);
+      for (const c of byDistance(s.creatures)) {
+        const r = C.creatureRect(c, cfg);
+        drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
+        drawEyes(ctx, r, PAL.red, 0, 0, 1);
+      }
+    } else {
+      ctx.fillStyle = PAL.black;
+      ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = PAL.white;
+    ctx.lineWidth = 1;
+    if (!lit) ctx.setLineDash([4, 4]);
+    ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
+    ctx.setLineDash([]);
+    ctx.fillStyle = lit ? PAL.blue : PAL.white;
+    ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
+    ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
+
+    if (s.flashTimer > 0) {
+      ctx.fillStyle = PAL.white;
+      ctx.fillRect(0, 0, S, S);
+    }
+    drawHud(ctx, s);
+    if (cfg.debug) drawDebug(ctx, s);
+  }
+
+  function blink(s) {
+    return Math.floor(s.phaseTime * 2) % 2 === 0;
+  }
+
+  function drawAttract(ctx, s) {
+    ctx.fillStyle = PAL.black;
+    ctx.fillRect(0, 0, S, S);
+    drawScenery(ctx, PAL.blue);
+    text(ctx, 'EVIDENCE 1976', S / 2, 50, PAL.white, 22, 'center');
+    if (Math.floor(s.phaseTime * 0.8) % 3 !== 0) {
+      drawEyes(ctx, C.creatureRect({ x: 160, dist: 0.6 }, s.cfg), PAL.red, 0, 0, 1);
+    }
+    text(ctx, 'IT ONLY MOVES', S / 2, 205, PAL.white, 12, 'center');
+    text(ctx, 'WHEN YOU LOOK AWAY.', S / 2, 222, PAL.white, 12, 'center');
+    if (blink(s)) text(ctx, 'PRESS FIRE', S / 2, 262, PAL.red, 12, 'center');
+    text(ctx, 'ARROWS: AIM   SPACE: SHUTTER', S / 2, 298, PAL.blue, 8, 'center');
+  }
+
+  function drawDevelop(ctx, s) {
+    ctx.fillStyle = PAL.black;
+    ctx.fillRect(0, 0, S, S);
+    text(ctx, 'NIGHT ' + s.night + ' — EVIDENCE FOUND', S / 2, 24, PAL.white, 11, 'center');
+    const p = C.bestPhoto(s);
+    const k = 1.6;
+    drawPhoto(ctx, p, (S - p.vf.w * k) / 2, 52, k);
+    text(ctx, 'SCORE ' + s.score, S / 2, 260, PAL.white, 10, 'center');
+    if (s.phaseTime > 0.5 && blink(s)) text(ctx, 'PRESS FIRE FOR NIGHT ' + (s.night + 1), S / 2, 284, PAL.red, 10, 'center');
+  }
+
+  const END_TEXT = { caught: 'IT FOUND YOU.', dawn: 'THE SUN CAME UP.', nofilm: 'OUT OF FILM.' };
+
+  function drawGameOver(ctx, s) {
+    ctx.fillStyle = PAL.black;
+    ctx.fillRect(0, 0, S, S);
+    if (s.endReason === 'caught' && s.phaseTime < 1.2) {
+      ctx.fillStyle = PAL.red;
+      ctx.fillRect(60, 120, 70, 34);
+      ctx.fillRect(190, 120, 70, 34);
+      return;
+    }
+    text(ctx, 'GAME OVER', S / 2, 24, PAL.red, 20, 'center');
+    text(ctx, END_TEXT[s.endReason] || '', S / 2, 52, PAL.white, 11, 'center');
+    const p = C.bestPhoto(s);
+    if (p) {
+      const k = 1.3;
+      drawPhoto(ctx, p, (S - p.vf.w * k) / 2, 80, k);
+    }
+    text(ctx, 'NIGHT ' + s.night + '   SCORE ' + s.score, S / 2, 262, PAL.white, 10, 'center');
+    if (s.phaseTime > 1.5 && blink(s)) text(ctx, 'PRESS FIRE', S / 2, 284, PAL.red, 10, 'center');
+  }
+
+  function draw(ctx, s) {
+    if (s.phase === 'attract') drawAttract(ctx, s);
+    else if (s.phase === 'play') drawPlay(ctx, s);
+    else if (s.phase === 'develop') drawDevelop(ctx, s);
+    else drawGameOver(ctx, s);
+  }
+
+  const API = { PAL, draw };
+  if (typeof module === 'object' && module.exports) module.exports = API;
+  else root.EvidenceRender = API;
+})(typeof self !== 'undefined' ? self : this);
