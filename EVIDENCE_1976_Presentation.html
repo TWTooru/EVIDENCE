@@ -88,7 +88,7 @@ a { color: inherit; text-decoration: none; }
 }
 .quick-nav {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 .quick-nav a {
   min-height: 54px;
@@ -565,9 +565,8 @@ h2 {
     <a href="#experience">01 / 核心體驗</a>
     <a href="#mechanic">02 / 機制與視線悖論</a>
     <a href="#two-gates">03 / 街機兩道門</a>
-    <a href="#constraints">04 / 1976 規格轉化</a>
-    <a href="#refine">05 / 測試與迭代</a>
-    <a href="#demo">06 / 現場試玩 DEMO</a>
+    <a href="#refine">04 / 測試與迭代</a>
+    <a href="#demo">05 / 現場試玩 DEMO</a>
   </nav>
 </div>
 
@@ -718,67 +717,10 @@ h2 {
     </div>
   </section>
 
-  <!-- 04 / 1976 HARDWARE CONSTRAINTS -->
-  <section id="constraints">
-    <div class="container">
-      <div class="section-no">04 / 1976 SPEC CONSTRAINTS · 硬體限制轉化</div>
-      <h2>把 1976 年的硬體限制，<br>變成恐懼氛圍的武器。</h2>
-      <p class="lead">
-        低解析度與少色彩若拿來畫寫實場景會顯得簡陋，但拿來表現<strong>「漆黑森林裡的相機觀景窗與紅眼剪影」</strong>，反而比高畫質更具壓迫感。
-      </p>
-
-      <table class="spec-table">
-        <thead>
-          <tr>
-            <th>1976 街機規格限制</th>
-            <th>系統上限</th>
-            <th>《EVIDENCE 1976》的設計轉化</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>SCREEN &amp; RESOLUTION</strong></td>
-            <td>單畫面無捲動 · 320 × 320</td>
-            <td>固定森林邊緣視角，依距離 <code>dist (1.0 → 0.0)</code> 即時縮放剪影高度（16px → 130px）創造偽 3D 縱深。</td>
-          </tr>
-          <tr>
-            <td><strong>COLOR PALETTE</strong></td>
-            <td>高對比純色（無半透明混色）</td>
-            <td>
-              夜色黑、松林深藍、觀景窗閃光白、危險紅眼、十字準星琥珀黃（純 <code>fillRect</code> / <code>strokeRect</code> 繪製，無 Alpha 混色）。
-              <div class="swatch-row">
-                <span class="swatch"><span class="swatch-box" style="background:#000000"></span>#000000 夜黑</span>
-                <span class="swatch"><span class="swatch-box" style="background:#24307a"></span>#24307a 深藍</span>
-                <span class="swatch"><span class="swatch-box" style="background:#f2f2f2"></span>#f2f2f2 閃光白</span>
-                <span class="swatch"><span class="swatch-box" style="background:#ff2a2a"></span>#ff2a2a 紅眼</span>
-                <span class="swatch"><span class="swatch-box" style="background:#ffb000"></span>#ffb000 準星黃</span>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td><strong>ELECTRONIC AUDIO</strong></td>
-            <td>≤ 5 種電子波形合成音</td>
-            <td>純 Web Audio API 即時合成 <strong>5 種聲音</strong>：① 心跳（隨距離加快的低頻弦波）、② 樹枝斷裂（高通白噪音）、③ 閃光充電（上升鋸齒波）、④ 快門（方波＋噪音）、⑤ 被抓尖叫（下滑鋸齒波）。</td>
-          </tr>
-          <tr>
-            <td><strong>ACTIVE OBJECTS</strong></td>
-            <td>≤ 8–10 個活動物件</td>
-            <td>全場最多 <strong>9 個活動物件</strong>：觀景窗 (1) ＋「它」(1~2) ＋ 前後景松樹 (4) ＋ 閃光遮罩 (1) ＋ 照片縮圖 (1)。</td>
-          </tr>
-          <tr>
-            <td><strong>INPUT &amp; STATE</strong></td>
-            <td>單搖桿 ＋ 單按鍵 · 完整循環</td>
-            <td>搖桿移動觀景窗、單鍵邊緣觸發快門；完整經歷 <code>ATTRACT → PLAY → DEVELOP / GAME OVER → ATTRACT</code>。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- 05 / PLAYTEST & REFINE -->
+  <!-- 04 / PLAYTEST & REFINE -->
   <section id="refine">
     <div class="container">
-      <div class="section-no">05 / BUILD → TEST → REFINE · 測試發現與迭代證明</div>
+      <div class="section-no">04 / BUILD → TEST → REFINE · 測試發現與迭代證明</div>
       <h2>我們測試到了什麼問題？<br>留下什麼、改變什麼？</h2>
       <p class="lead">
         在初版原型完成後，我們馬上遇到了<strong>「一直拍到 OUT OF FILM（底片用完卻拿不到證據）」</strong>與<strong>「場景直線不像樹」</strong>兩個核心問題。透過拆解原因，我們做了三項關鍵迭代：
@@ -853,10 +795,10 @@ h2 {
     </div>
   </section>
 
-  <!-- 06 / LIVE PLAYABLE DEMO -->
+  <!-- 05 / LIVE PLAYABLE DEMO -->
   <section id="demo">
     <div class="container">
-      <div class="section-no">06 / LIVE ARCADE DEMO · 現場機台試玩與即時調參</div>
+      <div class="section-no">05 / LIVE ARCADE DEMO · 現場機台試玩與即時調參</div>
       <h2>站在機台前，試玩看看。</h2>
       <p class="lead">
         點擊下方機台畫面即可直接開始遊玩（按 <code>ESC</code> 可釋放鍵盤焦點回到簡報捲動）。右側面板可即時調整參數驗證手感。
