@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVIDENCE 1976 — Prototype</title>
+  <style>
+    body { margin: 0; background: #000; color: #f2f2f2; font-family: "Courier New", monospace;
+           display: flex; flex-direction: column; align-items: center; justify-content: center;
+           min-height: 100vh; gap: 10px; user-select: none; }
+    canvas { width: min(640px, 94vw, 82vh); aspect-ratio: 1; image-rendering: pixelated;
+             border: 4px solid #24307a; display: block; }
+    .help { font-size: 11px; color: #9aa; text-align: center; max-width: 94vw; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="640" height="640"></canvas>
+  <div class="help">
+    方向鍵 / WASD：移動觀景窗　SPACE / J / 點擊：快門<br>
+    URL 參數可調整數值，例如 <code>?approach=0.08&amp;vfSpeed=150&amp;debug=1</code>
+  </div>
+
+  <script src="evidence-core.js"></script>
+  <script src="evidence-render.js"></script>
+  <script src="evidence-audio.js"></script>
+  <script>
+    (() => {
+      const C = EvidenceCore;
+      const params = Object.fromEntries(new URLSearchParams(location.search));
+      if (params.debug === '') params.debug = 1;
+      const cfg = C.makeConfig(params);
+      const state = C.createGame(cfg, Date.now() >>> 0);
+
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(2, 0, 0, 2, 0, 0);
+
+      const FIRE = ['Space', 'KeyJ'];
+      const LEFT = ['ArrowLeft', 'KeyA'];
+      const RIGHT = ['ArrowRight', 'KeyD'];
+      const UP = ['ArrowUp', 'KeyW'];
+      const DOWN = ['ArrowDown', 'KeyS'];
+      const MOVE = [...LEFT, ...RIGHT, ...UP, ...DOWN];
+      const held = new Set();
+      let firePending = false;
+
+      addEventListener('keydown', (e) => {
+        EvidenceAudio.init();
+        if (FIRE.includes(e.code)) {
+          if (!e.repeat) firePending = true;
+          e.preventDefault();
+        } else if (MOVE.includes(e.code)) {
+          held.add(e.code);
+          e.preventDefault();
+        }
+      });
+      addEventListener('keyup', (e) => held.delete(e.code));
+      addEventListener('blur', () => held.clear());
+      canvas.addEventListener('pointerdown', () => {
+        EvidenceAudio.init();
+        firePending = true;
+      });
+
+      const axis = (neg, pos) =>
+        (pos.some((k) => held.has(k)) ? 1 : 0) - (neg.some((k) => held.has(k)) ? 1 : 0);
+
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        const input = { dx: axis(LEFT, RIGHT), dy: axis(UP, DOWN), fire: firePending };
+        firePending = false;
+        for (const ev of C.step(state, input, dt)) EvidenceAudio.play(ev, cfg);
+        EvidenceRender.draw(ctx, state);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
