@@ -23,7 +23,7 @@
   }
 
   // r: 身體外框 {x,y,w,h}；ox, oy, k: 平移與縮放（給照片縮圖用）
-  function drawSilhouette(ctx, r, color, ox, oy, k) {
+  function drawSilhouette(ctx, r, color, ox = 0, oy = 0, k = 1) {
     const X = (v) => ox + v * k;
     const Y = (v) => oy + v * k;
     const headH = r.h * 0.22;
@@ -36,7 +36,7 @@
     ctx.fillRect(X(r.x + r.w * 0.65), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
   }
 
-  function drawEyes(ctx, r, color, ox, oy, k) {
+  function drawEyes(ctx, r, color, ox = 0, oy = 0, k = 1) {
     const cx = r.x + r.w / 2;
     const ey = r.y + r.h * 0.12;
     const size = Math.max(1, r.w * 0.12) * k;

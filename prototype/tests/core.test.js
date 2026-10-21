@@ -54,6 +54,16 @@ test('gradePhoto: large but half outside the frame is only SUSPICIOUS', () => {
   assert.ok(Math.abs(g.completeness - 0.55) < 1e-9);
 });
 
+test('gradePhoto: zero-area rect does not divide by zero and returns BLURRY', () => {
+  const cfg = C.makeConfig();
+  const vf = { x: 100, y: 100, w: 90, h: 110 };
+  const g = C.gradePhoto(vf, { x: 130, y: 105, w: 0, h: 0 }, cfg);
+  assert.equal(g.completeness, 0);
+  assert.equal(g.fill, 0);
+  assert.equal(g.score, 0);
+  assert.equal(g.grade, 'BLURRY');
+});
+
 test('night 3 brings two creatures and faster approach', () => {
   const cfg = C.makeConfig();
   const n3 = C.nightSettings(3, cfg);
@@ -168,5 +178,18 @@ test('the viewfinder moves at vfSpeed and stays on screen', () => {
   assert.equal(s.vf.x, 100 + s.cfg.vfSpeed * 0.5);
   C.step(s, { dx: -1 }, 10);
   assert.equal(s.vf.x, 0);
+});
+
+test('step accepts undefined input and clamps timeLeft to zero at dawn', () => {
+  const s0 = C.createGame(C.makeConfig(), 1);
+  assert.doesNotThrow(() => C.step(s0, undefined, 0.1));
+  const s = playing();
+  assert.doesNotThrow(() => C.step(s, undefined, 0.1));
+  s.timeLeft = 0.05;
+  C.step(s, undefined, 0.1);
+  assert.equal(s.timeLeft, 0);
+  assert.equal(s.phase, 'gameover');
+  assert.equal(s.endReason, 'dawn');
+  assert.doesNotThrow(() => C.step(s, undefined, 0.1));
 });
 

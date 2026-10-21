@@ -82,7 +82,8 @@
   }
 
   function gradePhoto(vf, rect, cfg) {
-    const completeness = overlapArea(vf, rect) / (rect.w * rect.h);
+    const area = rect.w * rect.h;
+    const completeness = area > 0 ? overlapArea(vf, rect) / area : 0;
     const fill = Math.min(rect.h / vf.h, 1);
     const score = Math.round(100 * fill * completeness);
     let grade = 'BLURRY';
@@ -195,6 +196,7 @@
   }
 
   function playStep(s, input, dt, events) {
+    input = input || {};
     const cfg = s.cfg;
     const st = s.settings;
 
@@ -204,7 +206,7 @@
     s.vf.x = clamp(s.vf.x + dx * cfg.vfSpeed * dt, 0, SCREEN - s.vf.w);
     s.vf.y = clamp(s.vf.y + dy * cfg.vfSpeed * dt, 0, SCREEN - s.vf.h);
 
-    s.timeLeft -= dt;
+    s.timeLeft = Math.max(0, s.timeLeft - dt);
     s.blindTimer = Math.max(0, s.blindTimer - dt);
     s.flashTimer = Math.max(0, s.flashTimer - dt);
     s.lastPhotoTimer = Math.max(0, s.lastPhotoTimer - dt);
@@ -256,6 +258,7 @@
   }
 
   function step(s, input, dt) {
+    input = input || {};
     const events = [];
     s.phaseTime += dt;
     if (s.phase === 'attract') {
