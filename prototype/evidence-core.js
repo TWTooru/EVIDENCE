@@ -19,7 +19,8 @@
     blind: 1,             // 閃光後致盲秒數
     glint: 1.5,           // 框外紅眼閃光間隔（秒）
     glintOn: 0.15,        // 紅眼閃光持續秒數
-    retreat: 0.95,        // 閃光後被逼退到的距離
+    retreat: 0.95,        // 閃光後被逼退到的最遠距離上限
+    retreatStep: 0.35,    // 每次閃光逼退的距離增量
     minH: 16,             // 最遠時的身高（px）
     maxH: 130,            // 碰到玩家時的身高（px）
     evidenceFill: 0.85,
@@ -99,6 +100,8 @@
       approach: cfg.approach * speedUp,
       lateral: cfg.lateral * speedUp,
       nightTime: night >= 4 ? Math.max(40, cfg.nightTime - 5 * (night - 3)) : cfg.nightTime,
+      retreatStep: Math.max(0.22, cfg.retreatStep - 0.03 * (night - 1)),
+      glint: Math.max(0.9, cfg.glint - 0.1 * (night - 1)),
     };
   }
 
@@ -179,8 +182,9 @@
     s.blindTimer = cfg.blind;
     s.flashTimer = 0.15;
     s.lastPhotoTimer = 1.5;
+    const stepBack = (s.settings && s.settings.retreatStep) || cfg.retreatStep;
     for (const c of s.creatures) {
-      c.dist = cfg.retreat;
+      c.dist = Math.min(cfg.retreat, c.dist + stepBack);
       c.x = randomX(s.rng);
       c.targetX = randomX(s.rng);
     }
@@ -229,7 +233,7 @@
       }
       c.glintTimer -= dt;
       if (c.glintTimer <= 0) {
-        c.glintTimer = cfg.glint;
+        c.glintTimer = st.glint || cfg.glint;
         c.glintVisible = cfg.glintOn;
         events.push('glint');
       }

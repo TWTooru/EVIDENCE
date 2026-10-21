@@ -113,6 +113,13 @@ test('shutter uses film, pushes the creature back, blinds and drains charge', ()
   assert.equal(s.charge, 0);
   C.step(s, { fire: true }, 0.01);
   assert.equal(s.film, 2, 'cannot shoot while blind or uncharged');
+
+  // A closer creature is pushed back by retreatStep rather than all the way to 0.95
+  s.charge = 1;
+  s.blindTimer = 0;
+  s.creatures[0].dist = 0.4;
+  C.step(s, { fire: true }, 0.01);
+  assert.ok(Math.abs(s.creatures[0].dist - (0.4 + s.cfg.retreatStep)) < 1e-9);
 });
 
 test('using all film without evidence ends the game', () => {

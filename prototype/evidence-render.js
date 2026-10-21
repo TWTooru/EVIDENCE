@@ -5,7 +5,13 @@
   const C = root.EvidenceCore || (typeof require === 'function' ? require('./evidence-core.js') : null);
   const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a' };
   const S = C.SCREEN;
-  const TREES = [{ x: 30, w: 14 }, { x: 110, w: 10 }, { x: 215, w: 12 }, { x: 285, w: 16 }];
+  const TREES = [
+    { x: 34, baseY: 236, h: 170, w: 46, dist: 0.40 },
+    { x: 108, baseY: 184, h: 112, w: 32, dist: 0.72 },
+    { x: 216, baseY: 194, h: 122, w: 34, dist: 0.66 },
+    { x: 286, baseY: 246, h: 180, w: 48, dist: 0.34 },
+  ];
+  const TREELINE = [14, 22, 16, 28, 18, 12, 24, 15, 20, 26, 14, 19, 25, 16, 22, 13, 27, 18, 14, 21];
   const GRADE_TEXT = { EVIDENCE: 'EVIDENCE', SUSPICIOUS: 'SUSPICIOUS', BLURRY: 'BLURRY' };
 
   function text(ctx, str, x, y, color, size, align) {
@@ -16,10 +22,47 @@
     ctx.fillText(str, x, y);
   }
 
-  function drawScenery(ctx, color) {
+  function drawPine(ctx, t, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(0, C.HORIZON_Y, S, 1);
-    for (const t of TREES) ctx.fillRect(t.x - t.w / 2, 0, t.w, S);
+    const topY = t.baseY - t.h;
+    const trunkW = Math.max(4, Math.round(t.w * 0.16));
+    const trunkTop = topY + Math.round(t.h * 0.22);
+    // 樹幹與樹根張開底座
+    ctx.fillRect(Math.round(t.x - trunkW / 2), trunkTop, trunkW, t.baseY - trunkTop);
+    ctx.fillRect(Math.round(t.x - trunkW), t.baseY - 3, trunkW * 2, 3);
+
+    // 5 層階梯狀針葉樹冠（由上而下漸寬）
+    const canopyH = Math.round(t.h * 0.76);
+    const tiers = 5;
+    const tierStep = canopyH / tiers;
+    for (let i = 0; i < tiers; i++) {
+      const ty = Math.round(topY + i * tierStep);
+      const maxW = Math.round(t.w * (0.34 + 0.66 * ((i + 1) / tiers)));
+      const slices = 3;
+      const sh = Math.max(3, Math.ceil((tierStep * 1.18) / slices));
+      for (let s = 0; s < slices; s++) {
+        const sw = Math.round(maxW * (0.45 + 0.55 * ((s + 1) / slices)));
+        ctx.fillRect(Math.round(t.x - sw / 2), ty + s * (sh - 1), sw, sh);
+      }
+    }
+  }
+
+  function drawHorizon(ctx, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, C.HORIZON_Y, S, 2);
+    const segW = S / TREELINE.length;
+    for (let i = 0; i < TREELINE.length; i++) {
+      const h = TREELINE[i];
+      const cx = i * segW + segW / 2;
+      ctx.fillRect(Math.round(cx - segW * 0.3), C.HORIZON_Y - h, Math.ceil(segW * 0.6), h);
+      ctx.fillRect(Math.round(cx - segW * 0.55), C.HORIZON_Y - Math.round(h * 0.65), Math.ceil(segW * 1.1), Math.round(h * 0.65));
+    }
+  }
+
+  function drawScenery(ctx, color) {
+    drawHorizon(ctx, color);
+    const sortedTrees = TREES.slice().sort((a, b) => b.dist - a.dist);
+    for (const t of sortedTrees) drawPine(ctx, t, color);
   }
 
   // r: 身體外框 {x,y,w,h}；ox, oy, k: 平移與縮放（給照片縮圖用）
@@ -99,6 +142,27 @@
     });
   }
 
+  function bestAimHint(s) {
+    const cfg = s.cfg;
+    const vf = s.vf;
+    let best = null;
+    for (const c of s.creatures) {
+      const r = C.creatureRect(c, cfg);
+      const g = C.gradePhoto(vf, r, cfg);
+      if (g.completeness <= 0 && !c.frozen) continue;
+      if (!best || g.score > best.score) best = g;
+    }
+    if (!best) return null;
+    if (best.grade === 'EVIDENCE') {
+      return { label: 'EVIDENCE READY!', color: PAL.red, ready: true };
+    }
+    if (best.fill < cfg.evidenceFill) {
+      const pct = Math.min(99, Math.round((best.fill / cfg.evidenceFill) * 100));
+      return { label: 'TOO FAR (' + pct + '%)', color: PAL.blue, ready: false };
+    }
+    return { label: 'FIT FULL BODY', color: PAL.red, ready: false };
+  }
+
   function drawPlay(ctx, s) {
     const cfg = s.cfg;
     const vf = s.vf;
@@ -110,6 +174,7 @@
     }
 
     const lit = s.blindTimer <= 0;
+    const hint = lit ? bestAimHint(s) : null;
     ctx.save();
     ctx.beginPath();
     ctx.rect(vf.x, vf.y, vf.w, vf.h);
@@ -117,11 +182,19 @@
     if (lit) {
       ctx.fillStyle = PAL.white;
       ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
-      drawScenery(ctx, PAL.blue);
-      for (const c of byDistance(s.creatures)) {
-        const r = C.creatureRect(c, cfg);
-        drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
-        drawEyes(ctx, r, PAL.red, 0, 0, 1);
+      drawHorizon(ctx, PAL.blue);
+      const items = [];
+      for (const t of TREES) items.push({ kind: 'tree', dist: t.dist, t });
+      for (const c of s.creatures) items.push({ kind: 'creature', dist: c.dist, c });
+      items.sort((a, b) => b.dist - a.dist);
+      for (const it of items) {
+        if (it.kind === 'tree') {
+          drawPine(ctx, it.t, PAL.blue);
+        } else {
+          const r = C.creatureRect(it.c, cfg);
+          drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
+          drawEyes(ctx, r, PAL.red, 0, 0, 1);
+        }
       }
     } else {
       ctx.fillStyle = PAL.black;
@@ -129,14 +202,21 @@
     }
     ctx.restore();
 
-    ctx.strokeStyle = PAL.white;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = hint && hint.ready ? PAL.red : PAL.white;
+    ctx.lineWidth = hint && hint.ready ? 2 : 1;
     if (!lit) ctx.setLineDash([4, 4]);
     ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
     ctx.setLineDash([]);
-    ctx.fillStyle = lit ? PAL.blue : PAL.white;
+    ctx.fillStyle = hint && hint.ready ? PAL.red : lit ? PAL.blue : PAL.white;
     ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
     ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
+
+    if (hint) {
+      const bannerY = vf.y + vf.h + 12 <= S - 18 ? vf.y + vf.h + 2 : vf.y - 11;
+      ctx.fillStyle = PAL.black;
+      ctx.fillRect(vf.x, bannerY, vf.w, 10);
+      text(ctx, hint.label, vf.x + vf.w / 2, bannerY + 1, hint.color === PAL.blue ? PAL.white : PAL.red, 8, 'center');
+    }
 
     if (s.flashTimer > 0) {
       ctx.fillStyle = PAL.white;
