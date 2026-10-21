@@ -3,7 +3,7 @@
   'use strict';
 
   const C = root.EvidenceCore || (typeof require === 'function' ? require('./evidence-core.js') : null);
-  const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a' };
+  const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a', yellow: '#ffb000' };
   const S = C.SCREEN;
   const TREES = [
     { x: 34, baseY: 236, h: 170, w: 46, dist: 0.40 },
@@ -207,7 +207,7 @@
     if (!lit) ctx.setLineDash([4, 4]);
     ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
     ctx.setLineDash([]);
-    ctx.fillStyle = hint && hint.ready ? PAL.red : lit ? PAL.blue : PAL.white;
+    ctx.fillStyle = PAL.yellow;
     ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
     ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
 

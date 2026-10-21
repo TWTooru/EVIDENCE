@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVIDENCE 1976 — Standalone Arcade Prototype</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #000000;
+      color: #f2f2f2;
+      font-family: "Courier New", Courier, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 10px;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .arcade-header {
+      font-size: 15px;
+      font-weight: bold;
+      color: #ffb000;
+      letter-spacing: 3px;
+    }
+    canvas {
+      width: min(640px, 94vw, 82vh);
+      aspect-ratio: 1;
+      image-rendering: pixelated;
+      border: 4px solid #24307a;
+      box-shadow: 0 0 24px rgba(36, 48, 122, 0.7);
+      display: block;
+      cursor: pointer;
+    }
+    .help {
+      font-size: 11px;
+      color: #9aa;
+      text-align: center;
+      max-width: 94vw;
+      line-height: 1.6;
+    }
+    .help span { color: #ffb000; }
+  </style>
+</head>
+<body>
+  <div class="arcade-header">★ EVIDENCE 1976 ★</div>
+  <canvas id="c" width="640" height="640"></canvas>
+  <div class="help">
+    [<span>方向鍵 / WASD</span>] 移動觀景窗　[<span>SPACE / J / 點擊</span>] 快門＋閃光<br>
+    URL 參數可調整數值，例如 <code>?approach=0.08&amp;vfSpeed=150&amp;debug=1</code>
+  </div>
+
+  <script>
+    /* =====================================================================
+     * MODULE 1: Core Logic (EvidenceCore)
+     * ===================================================================== */
+    (function (root) {
+      'use strict';
+
+      const SCREEN = 320;
+      const HORIZON_Y = 140;
+      const FEET_NEAR_Y = 300;
+
+      const DEFAULTS = {
+        vfW: 90,              // 觀景窗寬
+        vfH: 110,             // 觀景窗高
+        vfSpeed: 120,         // 觀景窗移動速度（px/s）
+        approach: 0.06,       // 沒被注視時每秒靠近的距離（dist 單位）
+        lateral: 30,          // 沒被注視時的橫移速度（px/s）
+        nightTime: 60,        // 每晚秒數
+        film: 3,              // 每晚底片數
+        charge: 2,            // 閃光充電秒數
+        blind: 1,             // 閃光後致盲秒數
+        glint: 1.5,           // 框外紅眼閃光間隔（秒）
+        glintOn: 0.15,        // 紅眼閃光持續秒數
+        retreat: 0.95,        // 閃光後被逼退到的最遠距離上限
+        retreatStep: 0.35,    // 每次閃光逼退的距離增量
+        minH: 16,             // 最遠時的身高（px）
+        maxH: 130,            // 碰到玩家時的身高（px）
+        evidenceFill: 0.85,
+        evidenceComplete: 0.95,
+        suspiciousScore: 40,
+        debug: 0,
+      };
+
+      function makeConfig(overrides) {
+        const cfg = Object.assign({}, DEFAULTS);
+        if (!overrides) return cfg;
+        for (const key of Object.keys(DEFAULTS)) {
+          const raw = overrides[key];
+          if (raw === undefined || raw === null || raw === '') continue;
+          const value = Number(raw);
+          if (Number.isFinite(value)) cfg[key] = value;
+        }
+        return cfg;
+      }
+
+      function mulberry32(a) {
+        let seed = (a >>> 0) || 1;
+        return function () {
+          let t = (seed += 0x6D2B79F5);
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function clamp(v, lo, hi) {
+        return Math.min(hi, Math.max(lo, v));
+      }
+
+      function creatureRect(c, cfg) {
+        const near = 1 - c.dist;
+        const h = cfg.minH + (cfg.maxH - cfg.minH) * near;
+        const w = h * 0.3;
+        const feetY = HORIZON_Y + (FEET_NEAR_Y - HORIZON_Y) * near;
+        return { x: c.x - w / 2, y: feetY - h, w, h };
+      }
+
+      function eyePoint(c, cfg) {
+        const r = creatureRect(c, cfg);
+        return { x: c.x, y: r.y + r.h * 0.12 };
+      }
+
+      function pointInRect(p, r) {
+        return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+      }
+
+      function isFrozen(c, vf, blindTimer, cfg) {
+        return blindTimer <= 0 && pointInRect(eyePoint(c, cfg), vf);
+      }
+
+      function overlapArea(a, b) {
+        const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        return w > 0 && h > 0 ? w * h : 0;
+      }
+
+      function gradePhoto(vf, rect, cfg) {
+        const area = rect.w * rect.h;
+        const completeness = area > 0 ? overlapArea(vf, rect) / area : 0;
+        const fill = Math.min(rect.h / vf.h, 1);
+        const score = Math.round(100 * fill * completeness);
+        let grade = 'BLURRY';
+        if (fill >= cfg.evidenceFill && completeness >= cfg.evidenceComplete) grade = 'EVIDENCE';
+        else if (score >= cfg.suspiciousScore) grade = 'SUSPICIOUS';
+        return { score, grade, fill, completeness };
+      }
+
+      function nightSettings(night, cfg) {
+        const speedUp = 1 + 0.25 * (night - 1);
+        return {
+          count: night >= 3 ? 2 : 1,
+          approach: cfg.approach * speedUp,
+          lateral: cfg.lateral * speedUp,
+          nightTime: night >= 4 ? Math.max(40, cfg.nightTime - 5 * (night - 3)) : cfg.nightTime,
+          retreatStep: Math.max(0.22, cfg.retreatStep - 0.03 * (night - 1)),
+          glint: Math.max(0.9, cfg.glint - 0.1 * (night - 1)),
+        };
+      }
+
+      function randomX(rng) {
+        return 40 + rng() * 240;
+      }
+
+      function spawnCreature(rng, cfg, dist) {
+        return { x: randomX(rng), dist, targetX: randomX(rng), glintTimer: cfg.glint, glintVisible: 0, frozen: false };
+      }
+
+      function createGame(cfg, seed) {
+        return {
+          cfg,
+          rng: mulberry32(seed || 1976),
+          phase: 'attract',
+          phaseTime: 0,
+          night: 0,
+          score: 0,
+          vf: { x: (SCREEN - cfg.vfW) / 2, y: (SCREEN - cfg.vfH) / 2, w: cfg.vfW, h: cfg.vfH },
+          creatures: [],
+          film: 0,
+          timeLeft: 0,
+          charge: 1,
+          blindTimer: 0,
+          flashTimer: 0,
+          photos: [],
+          lastPhotoTimer: 0,
+          settings: null,
+          heartTimer: 1,
+          snapTimer: 3,
+          endReason: null,
+        };
+      }
+
+      function startNight(s, night) {
+        const cfg = s.cfg;
+        s.night = night;
+        s.settings = nightSettings(night, cfg);
+        s.phase = 'play';
+        s.phaseTime = 0;
+        s.film = cfg.film;
+        s.timeLeft = s.settings.nightTime;
+        s.charge = 1;
+        s.blindTimer = 0;
+        s.flashTimer = 0;
+        s.photos = [];
+        s.lastPhotoTimer = 0;
+        s.endReason = null;
+        s.creatures = [];
+        for (let i = 0; i < s.settings.count; i++) s.creatures.push(spawnCreature(s.rng, cfg, 0.9));
+        const eye = eyePoint(s.creatures[0], cfg);
+        s.vf.x = clamp(eye.x - s.vf.w / 2, 0, SCREEN - s.vf.w);
+        s.vf.y = clamp(eye.y - s.vf.h / 2, 0, SCREEN - s.vf.h);
+      }
+
+      function endGame(s, reason, events) {
+        s.phase = 'gameover';
+        s.phaseTime = 0;
+        s.endReason = reason;
+        events.push(reason === 'caught' ? 'caught' : 'lose');
+      }
+
+      function takePhoto(s, events) {
+        const cfg = s.cfg;
+        const rects = s.creatures.map((c) => creatureRect(c, cfg));
+        let best = null;
+        for (const r of rects) {
+          const g = gradePhoto(s.vf, r, cfg);
+          if (!best || g.score > best.score) best = g;
+        }
+        const photo = { vf: Object.assign({}, s.vf), rects, grade: best.grade, score: best.score };
+        s.photos.push(photo);
+        s.score += photo.score;
+        s.film -= 1;
+        s.charge = 0;
+        s.blindTimer = cfg.blind;
+        s.flashTimer = 0.15;
+        s.lastPhotoTimer = 1.5;
+        const stepBack = (s.settings && s.settings.retreatStep) || cfg.retreatStep;
+        for (const c of s.creatures) {
+          c.dist = Math.min(cfg.retreat, c.dist + stepBack);
+          c.x = randomX(s.rng);
+          c.targetX = randomX(s.rng);
+        }
+        events.push('shot');
+        if (photo.grade === 'EVIDENCE') {
+          s.score += 100;
+          s.phase = 'develop';
+          s.phaseTime = 0;
+          events.push('win');
+        } else if (s.film <= 0) {
+          endGame(s, 'nofilm', events);
+        }
+      }
+
+      function playStep(s, input, dt, events) {
+        input = input || {};
+        const cfg = s.cfg;
+        const st = s.settings;
+
+        let dx = input.dx || 0;
+        let dy = input.dy || 0;
+        if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+        s.vf.x = clamp(s.vf.x + dx * cfg.vfSpeed * dt, 0, SCREEN - s.vf.w);
+        s.vf.y = clamp(s.vf.y + dy * cfg.vfSpeed * dt, 0, SCREEN - s.vf.h);
+
+        s.timeLeft = Math.max(0, s.timeLeft - dt);
+        s.blindTimer = Math.max(0, s.blindTimer - dt);
+        s.flashTimer = Math.max(0, s.flashTimer - dt);
+        s.lastPhotoTimer = Math.max(0, s.lastPhotoTimer - dt);
+        if (s.charge < 1) s.charge = Math.min(1, s.charge + dt / cfg.charge);
+
+        let anyMoving = false;
+        for (const c of s.creatures) {
+          c.frozen = isFrozen(c, s.vf, s.blindTimer, cfg);
+          c.glintVisible = Math.max(0, c.glintVisible - dt);
+          if (c.frozen) continue;
+          anyMoving = true;
+          c.dist = Math.max(0, c.dist - st.approach * dt);
+          const toTarget = c.targetX - c.x;
+          const stepX = st.lateral * dt;
+          if (Math.abs(toTarget) <= stepX) {
+            c.x = c.targetX;
+            c.targetX = randomX(s.rng);
+          } else {
+            c.x += Math.sign(toTarget) * stepX;
+          }
+          c.glintTimer -= dt;
+          if (c.glintTimer <= 0) {
+            c.glintTimer = st.glint || cfg.glint;
+            c.glintVisible = cfg.glintOn;
+            events.push('glint');
+          }
+        }
+
+        const nearest = Math.min(...s.creatures.map((c) => c.dist));
+        s.heartTimer -= dt;
+        if (s.heartTimer <= 0) {
+          s.heartTimer = 0.3 + 0.7 * nearest;
+          events.push('heartbeat');
+        }
+        if (anyMoving) {
+          s.snapTimer -= dt;
+          if (s.snapTimer <= 0) {
+            s.snapTimer = 2 + s.rng() * 2;
+            events.push('snap');
+          }
+        }
+
+        if (nearest <= 0) { endGame(s, 'caught', events); return; }
+
+        if (input.fire && s.charge >= 1 && s.blindTimer <= 0 && s.film > 0) takePhoto(s, events);
+        if (s.phase !== 'play') return;
+
+        if (s.timeLeft <= 0) endGame(s, 'dawn', events);
+      }
+
+      function step(s, input, dt) {
+        input = input || {};
+        const events = [];
+        s.phaseTime += dt;
+        if (s.phase === 'attract') {
+          if (input.fire) {
+            s.score = 0;
+            startNight(s, 1);
+            events.push('start');
+          }
+          return events;
+        }
+        if (s.phase === 'develop') {
+          if (input.fire && s.phaseTime > 0.5) {
+            startNight(s, s.night + 1);
+            events.push('start');
+          }
+          return events;
+        }
+        if (s.phase === 'gameover') {
+          if (input.fire && s.phaseTime > 1.5) {
+            s.phase = 'attract';
+            s.phaseTime = 0;
+          }
+          return events;
+        }
+        playStep(s, input, dt, events);
+        return events;
+      }
+
+      function bestPhoto(s) {
+        return s.photos.reduce((b, p) => (!b || p.score > b.score ? p : b), null);
+      }
+
+      root.EvidenceCore = {
+        SCREEN, HORIZON_Y, FEET_NEAR_Y, DEFAULTS,
+        makeConfig, mulberry32, clamp,
+        creatureRect, eyePoint, isFrozen, gradePhoto, nightSettings,
+        createGame, startNight, step, bestPhoto,
+      };
+    })(window);
+
+    /* =====================================================================
+     * MODULE 2: Canvas Renderer (EvidenceRender)
+     * ===================================================================== */
+    (function (root) {
+      'use strict';
+
+      const C = root.EvidenceCore;
+      const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a', yellow: '#ffb000' };
+      const S = C.SCREEN;
+      const TREES = [
+        { x: 34, baseY: 236, h: 170, w: 46, dist: 0.40 },
+        { x: 108, baseY: 184, h: 112, w: 32, dist: 0.72 },
+        { x: 216, baseY: 194, h: 122, w: 34, dist: 0.66 },
+        { x: 286, baseY: 246, h: 180, w: 48, dist: 0.34 },
+      ];
+      const TREELINE = [14, 22, 16, 28, 18, 12, 24, 15, 20, 26, 14, 19, 25, 16, 22, 13, 27, 18, 14, 21];
+      const GRADE_TEXT = { EVIDENCE: 'EVIDENCE', SUSPICIOUS: 'SUSPICIOUS', BLURRY: 'BLURRY' };
+
+      function text(ctx, str, x, y, color, size, align) {
+        ctx.fillStyle = color;
+        ctx.font = 'bold ' + (size || 10) + 'px "Courier New", monospace';
+        ctx.textAlign = align || 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(str, x, y);
+      }
+
+      function drawPine(ctx, t, color) {
+        ctx.fillStyle = color;
+        const topY = t.baseY - t.h;
+        const trunkW = Math.max(4, Math.round(t.w * 0.16));
+        const trunkTop = topY + Math.round(t.h * 0.22);
+        ctx.fillRect(Math.round(t.x - trunkW / 2), trunkTop, trunkW, t.baseY - trunkTop);
+        ctx.fillRect(Math.round(t.x - trunkW), t.baseY - 3, trunkW * 2, 3);
+
+        const canopyH = Math.round(t.h * 0.76);
+        const tiers = 5;
+        const tierStep = canopyH / tiers;
+        for (let i = 0; i < tiers; i++) {
+          const ty = Math.round(topY + i * tierStep);
+          const maxW = Math.round(t.w * (0.34 + 0.66 * ((i + 1) / tiers)));
+          const slices = 3;
+          const sh = Math.max(3, Math.ceil((tierStep * 1.18) / slices));
+          for (let s = 0; s < slices; s++) {
+            const sw = Math.round(maxW * (0.45 + 0.55 * ((s + 1) / slices)));
+            ctx.fillRect(Math.round(t.x - sw / 2), ty + s * (sh - 1), sw, sh);
+          }
+        }
+      }
+
+      function drawHorizon(ctx, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, C.HORIZON_Y, S, 2);
+        const segW = S / TREELINE.length;
+        for (let i = 0; i < TREELINE.length; i++) {
+          const h = TREELINE[i];
+          const cx = i * segW + segW / 2;
+          ctx.fillRect(Math.round(cx - segW * 0.3), C.HORIZON_Y - h, Math.ceil(segW * 0.6), h);
+          ctx.fillRect(Math.round(cx - segW * 0.55), C.HORIZON_Y - Math.round(h * 0.65), Math.ceil(segW * 1.1), Math.round(h * 0.65));
+        }
+      }
+
+      function drawScenery(ctx, color) {
+        drawHorizon(ctx, color);
+        const sortedTrees = TREES.slice().sort((a, b) => b.dist - a.dist);
+        for (const t of sortedTrees) drawPine(ctx, t, color);
+      }
+
+      function drawSilhouette(ctx, r, color, ox = 0, oy = 0, k = 1) {
+        const X = (v) => ox + v * k;
+        const Y = (v) => oy + v * k;
+        const headH = r.h * 0.22;
+        const torsoH = r.h * 0.45;
+        const legH = r.h - headH - torsoH;
+        ctx.fillStyle = color;
+        ctx.fillRect(X(r.x + r.w * 0.2), Y(r.y), r.w * 0.6 * k, headH * k);
+        ctx.fillRect(X(r.x), Y(r.y + headH), r.w * k, torsoH * k);
+        ctx.fillRect(X(r.x + r.w * 0.05), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+        ctx.fillRect(X(r.x + r.w * 0.65), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+      }
+
+      function drawEyes(ctx, r, color, ox = 0, oy = 0, k = 1) {
+        const cx = r.x + r.w / 2;
+        const ey = r.y + r.h * 0.12;
+        const size = Math.max(1, r.w * 0.12) * k;
+        ctx.fillStyle = color;
+        ctx.fillRect(ox + (cx - r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
+        ctx.fillRect(ox + (cx + r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
+      }
+
+      function drawPhoto(ctx, photo, x, y, k) {
+        const vf = photo.vf;
+        const ox = x - vf.x * k;
+        const oy = y - vf.y * k;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, vf.w * k, vf.h * k);
+        ctx.clip();
+        ctx.fillStyle = PAL.white;
+        ctx.fillRect(x, y, vf.w * k, vf.h * k);
+        const sorted = photo.rects.slice().sort((a, b) => a.h - b.h);
+        for (const r of sorted) {
+          drawSilhouette(ctx, r, PAL.black, ox, oy, k);
+          drawEyes(ctx, r, PAL.red, ox, oy, k);
+        }
+        ctx.restore();
+        ctx.strokeStyle = PAL.white;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 2.5, y - 2.5, vf.w * k + 5, vf.h * k + 5);
+        const gradeColor = photo.grade === 'EVIDENCE' ? PAL.red : PAL.white;
+        text(ctx, GRADE_TEXT[photo.grade] + ' ' + photo.score, x + (vf.w * k) / 2, y + vf.h * k + 6, gradeColor, 8, 'center');
+      }
+
+      function drawHud(ctx, s) {
+        ctx.fillStyle = PAL.black;
+        ctx.fillRect(0, 0, S, 14);
+        text(ctx, 'NIGHT ' + s.night, 6, 3, PAL.white, 9);
+        text(ctx, 'DAWN ' + Math.max(0, Math.ceil(s.timeLeft)), S - 6, 3, PAL.white, 9, 'right');
+        text(ctx, 'SCORE ' + s.score, S / 2, 3, PAL.blue, 9, 'center');
+
+        for (let i = 0; i < s.cfg.film; i++) {
+          ctx.fillStyle = i < s.film ? PAL.white : PAL.blue;
+          ctx.fillRect(6 + i * 12, S - 16, 8, 10);
+        }
+        ctx.strokeStyle = PAL.white;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(S - 52.5, S - 13.5, 46, 6);
+        ctx.fillStyle = s.charge >= 1 ? PAL.red : PAL.white;
+        ctx.fillRect(S - 51, S - 12, 43 * s.charge, 3);
+
+        const last = s.photos[s.photos.length - 1];
+        if (s.lastPhotoTimer > 0 && last) drawPhoto(ctx, last, S - 52, S - 92, 0.4);
+      }
+
+      function drawDebug(ctx, s) {
+        s.creatures.forEach((c, i) => {
+          text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
+        });
+      }
+
+      function bestAimHint(s) {
+        const cfg = s.cfg;
+        const vf = s.vf;
+        let best = null;
+        for (const c of s.creatures) {
+          const r = C.creatureRect(c, cfg);
+          const g = C.gradePhoto(vf, r, cfg);
+          if (g.completeness <= 0 && !c.frozen) continue;
+          if (!best || g.score > best.score) best = g;
+        }
+        if (!best) return null;
+        if (best.grade === 'EVIDENCE') {
+          return { label: 'EVIDENCE READY!', color: PAL.red, ready: true };
+        }
+        if (best.fill < cfg.evidenceFill) {
+          const pct = Math.min(99, Math.round((best.fill / cfg.evidenceFill) * 100));
+          return { label: 'TOO FAR (' + pct + '%)', color: PAL.blue, ready: false };
+        }
+        return { label: 'FIT FULL BODY', color: PAL.red, ready: false };
+      }
+
+      function drawPlay(ctx, s) {
+        const cfg = s.cfg;
+        const vf = s.vf;
+        ctx.fillStyle = PAL.black;
+        ctx.fillRect(0, 0, S, S);
+        drawScenery(ctx, PAL.blue);
+        for (const c of s.creatures) {
+          if (c.glintVisible > 0) drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1);
+        }
+
+        const lit = s.blindTimer <= 0;
+        const hint = lit ? bestAimHint(s) : null;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(vf.x, vf.y, vf.w, vf.h);
+        ctx.clip();
+        if (lit) {
+          ctx.fillStyle = PAL.white;
+          ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
+          drawHorizon(ctx, PAL.blue);
+          const items = [];
+          for (const t of TREES) items.push({ kind: 'tree', dist: t.dist, t });
+          for (const c of s.creatures) items.push({ kind: 'creature', dist: c.dist, c });
+          items.sort((a, b) => b.dist - a.dist);
+          for (const it of items) {
+            if (it.kind === 'tree') {
+              drawPine(ctx, it.t, PAL.blue);
+            } else {
+              const r = C.creatureRect(it.c, cfg);
+              drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
+              drawEyes(ctx, r, PAL.red, 0, 0, 1);
+            }
+          }
+        } else {
+          ctx.fillStyle = PAL.black;
+          ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = hint && hint.ready ? PAL.red : PAL.white;
+        ctx.lineWidth = hint && hint.ready ? 2 : 1;
+        if (!lit) ctx.setLineDash([4, 4]);
+        ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
+        ctx.setLineDash([]);
+        ctx.fillStyle = PAL.yellow;
+        ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
+        ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
+
+        if (hint) {
+          const bannerY = vf.y + vf.h + 12 <= S - 18 ? vf.y + vf.h + 2 : vf.y - 11;
+          ctx.fillStyle = PAL.black;
+          ctx.fillRect(vf.x, bannerY, vf.w, 10);
+          text(ctx, hint.label, vf.x + vf.w / 2, bannerY + 1, hint.color === PAL.blue ? PAL.white : PAL.red, 8, 'center');
+        }
+
+        if (s.flashTimer > 0) {
+          ctx.fillStyle = PAL.white;
+          ctx.fillRect(0, 0, S, S);
+        }
+        drawHud(ctx, s);
+        if (cfg.debug) drawDebug(ctx, s);
+      }
+
+      function blink(s) {
+        return Math.floor(s.phaseTime * 2) % 2 === 0;
+      }
+
+      function drawAttract(ctx, s) {
+        ctx.fillStyle = PAL.black;
+        ctx.fillRect(0, 0, S, S);
+        drawScenery(ctx, PAL.blue);
+        text(ctx, 'EVIDENCE 1976', S / 2, 50, PAL.white, 22, 'center');
+        if (Math.floor(s.phaseTime * 0.8) % 3 !== 0) {
+          drawEyes(ctx, C.creatureRect({ x: 160, dist: 0.6 }, s.cfg), PAL.red, 0, 0, 1);
+        }
+        text(ctx, 'IT ONLY MOVES', S / 2, 205, PAL.white, 12, 'center');
+        text(ctx, 'WHEN YOU LOOK AWAY.', S / 2, 222, PAL.white, 12, 'center');
+        if (blink(s)) text(ctx, 'PRESS FIRE', S / 2, 262, PAL.red, 12, 'center');
+        text(ctx, 'ARROWS: AIM   SPACE: SHUTTER', S / 2, 298, PAL.blue, 8, 'center');
+      }
+
+      function drawDevelop(ctx, s) {
+        ctx.fillStyle = PAL.black;
+        ctx.fillRect(0, 0, S, S);
+        text(ctx, 'NIGHT ' + s.night + ' — EVIDENCE FOUND', S / 2, 24, PAL.white, 11, 'center');
+        const p = C.bestPhoto(s);
+        const k = 1.6;
+        drawPhoto(ctx, p, (S - p.vf.w * k) / 2, 52, k);
+        text(ctx, 'SCORE ' + s.score, S / 2, 260, PAL.white, 10, 'center');
+        if (s.phaseTime > 0.5 && blink(s)) text(ctx, 'PRESS FIRE FOR NIGHT ' + (s.night + 1), S / 2, 284, PAL.red, 10, 'center');
+      }
+
+      const END_TEXT = { caught: 'IT FOUND YOU.', dawn: 'THE SUN CAME UP.', nofilm: 'OUT OF FILM.' };
+
+      function drawGameOver(ctx, s) {
+        ctx.fillStyle = PAL.black;
+        ctx.fillRect(0, 0, S, S);
+        if (s.endReason === 'caught' && s.phaseTime < 1.2) {
+          ctx.fillStyle = PAL.red;
+          ctx.fillRect(60, 120, 70, 34);
+          ctx.fillRect(190, 120, 70, 34);
+          return;
+        }
+        text(ctx, 'GAME OVER', S / 2, 24, PAL.red, 20, 'center');
+        text(ctx, END_TEXT[s.endReason] || '', S / 2, 52, PAL.white, 11, 'center');
+        const p = C.bestPhoto(s);
+        if (p) {
+          const k = 1.3;
+          drawPhoto(ctx, p, (S - p.vf.w * k) / 2, 80, k);
+        }
+        text(ctx, 'NIGHT ' + s.night + '   SCORE ' + s.score, S / 2, 262, PAL.white, 10, 'center');
+        if (s.phaseTime > 1.5 && blink(s)) text(ctx, 'PRESS FIRE', S / 2, 284, PAL.red, 10, 'center');
+      }
+
+      function draw(ctx, s) {
+        if (s.phase === 'attract') drawAttract(ctx, s);
+        else if (s.phase === 'play') drawPlay(ctx, s);
+        else if (s.phase === 'develop') drawDevelop(ctx, s);
+        else drawGameOver(ctx, s);
+      }
+
+      root.EvidenceRender = { PAL, draw };
+    })(window);
+
+    /* =====================================================================
+     * MODULE 3: WebAudio Synthesizer (EvidenceAudio)
+     * ===================================================================== */
+    (function (root) {
+      'use strict';
+
+      let ac = null;
+      let master = null;
+
+      function init() {
+        if (ac) {
+          if (ac.state === 'suspended') ac.resume();
+          return;
+        }
+        const AC = root.AudioContext || root.webkitAudioContext;
+        if (!AC) return;
+        ac = new AC();
+        master = ac.createGain();
+        master.gain.value = 0.4;
+        master.connect(ac.destination);
+      }
+
+      function tone(type, f0, f1, dur, vol, delay) {
+        const t = ac.currentTime + (delay || 0);
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(f0, t);
+        osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(gain);
+        gain.connect(master);
+        osc.start(t);
+        osc.stop(t + dur + 0.02);
+      }
+
+      function noise(dur, vol, highpass, delay) {
+        const t = ac.currentTime + (delay || 0);
+        const len = Math.max(1, Math.floor(ac.sampleRate * dur));
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = highpass;
+        const gain = ac.createGain();
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(master);
+        src.start(t);
+      }
+
+      function heartbeat() {
+        tone('sine', 70, 45, 0.12, 0.8);
+        tone('sine', 70, 45, 0.1, 0.5, 0.18);
+      }
+      function snap() {
+        noise(0.06, 0.5, 2000);
+      }
+      function charge(seconds) {
+        tone('sawtooth', 300, 1500, seconds, 0.05, 0.1);
+      }
+      function shutter() {
+        tone('square', 1200, 300, 0.05, 0.3);
+        noise(0.08, 0.4, 800);
+      }
+      function scream(seconds, vol) {
+        tone('sawtooth', 900, 80, seconds, vol);
+        noise(seconds * 0.8, vol * 0.6, 500);
+      }
+
+      function play(event, cfg) {
+        if (!ac) return;
+        switch (event) {
+          case 'heartbeat': heartbeat(); break;
+          case 'snap': snap(); break;
+          case 'shot': shutter(); charge((cfg && cfg.charge) || 2); break;
+          case 'win': charge(0.4); break;
+          case 'caught': scream(1.2, 0.5); break;
+          case 'lose': scream(0.6, 0.25); break;
+          default: break;
+        }
+      }
+
+      root.EvidenceAudio = { init, play };
+    })(window);
+
+    /* =====================================================================
+     * MODULE 4: Main Loop & Input Binding
+     * ===================================================================== */
+    (() => {
+      const C = EvidenceCore;
+      const params = Object.fromEntries(new URLSearchParams(location.search));
+      if (params.debug === '') params.debug = 1;
+      const cfg = C.makeConfig(params);
+      const state = C.createGame(cfg, Date.now() >>> 0);
+
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(2, 0, 0, 2, 0, 0);
+
+      const FIRE = ['Space', 'KeyJ'];
+      const LEFT = ['ArrowLeft', 'KeyA'];
+      const RIGHT = ['ArrowRight', 'KeyD'];
+      const UP = ['ArrowUp', 'KeyW'];
+      const DOWN = ['ArrowDown', 'KeyS'];
+      const MOVE = [...LEFT, ...RIGHT, ...UP, ...DOWN];
+      const held = new Set();
+      let firePending = false;
+
+      addEventListener('keydown', (e) => {
+        EvidenceAudio.init();
+        if (FIRE.includes(e.code)) {
+          if (!e.repeat) firePending = true;
+          e.preventDefault();
+        } else if (MOVE.includes(e.code)) {
+          held.add(e.code);
+          e.preventDefault();
+        }
+      });
+      addEventListener('keyup', (e) => held.delete(e.code));
+      addEventListener('blur', () => held.clear());
+      canvas.addEventListener('pointerdown', () => {
+        EvidenceAudio.init();
+        firePending = true;
+      });
+
+      const axis = (neg, pos) =>
+        (pos.some((k) => held.has(k)) ? 1 : 0) - (neg.some((k) => held.has(k)) ? 1 : 0);
+
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        const input = { dx: axis(LEFT, RIGHT), dy: axis(UP, DOWN), fire: firePending };
+        firePending = false;
+        for (const ev of C.step(state, input, dt)) EvidenceAudio.play(ev, cfg);
+        EvidenceRender.draw(ctx, state);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

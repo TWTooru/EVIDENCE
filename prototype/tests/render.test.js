@@ -21,9 +21,9 @@ function fakeCtx() {
   return ctx;
 }
 
-test('every phase draws without errors using only the 4-color palette', () => {
+test('every phase draws without errors using only the defined palette', () => {
   const allowed = new Set(Object.values(R.PAL));
-  assert.equal(allowed.size, 4);
+  assert.equal(allowed.size, 5);
   const ctx = fakeCtx();
   const s = C.createGame(C.makeConfig({ debug: 1 }), 7);
 
