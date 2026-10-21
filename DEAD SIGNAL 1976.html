@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DEAD SIGNAL 1976 v18 Assisted Tuning (死訊號)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #000000;
+      color: #ffffff;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .arcade-cabinet {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .arcade-header {
+      font-size: 16px;
+      font-weight: bold;
+      color: #ffb000;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    .arcade-bezel {
+      position: relative;
+      width: min(640px, 94vw, 82vh);
+      aspect-ratio: 1;
+      background: #000000;
+      border: 4px solid #24307a;
+      box-shadow: 0 0 24px rgba(36, 48, 122, 0.7);
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    #c {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: auto;
+      touch-action: none;
+    }
+
+    /* CRT 掃描線濾鏡：純黑半透明條紋，絕無 RGB 色偏或彩色邊緣光 */
+    .crt-scanlines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: linear-gradient(
+        rgba(0, 0, 0, 0) 50%,
+        rgba(0, 0, 0, 0.45) 50%
+      );
+      background-size: 100% 4px;
+    }
+
+    .arcade-footer {
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      color: #ffffff;
+      letter-spacing: 1px;
+    }
+
+    .arcade-footer span {
+      color: #ffb000;
+    }
+    @media (max-width: 700px), (max-height: 780px) {
+      .arcade-cabinet { gap: 8px; }
+      .arcade-header { font-size: 12px; letter-spacing: 2px; }
+      .arcade-footer { max-width: 94vw; justify-content: center; flex-wrap: wrap; gap: 6px 14px; font-size: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .crt-scanlines { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="arcade-cabinet">
+    <div class="arcade-header">★ DEAD SIGNAL 1976 ★</div>
+    <div class="arcade-bezel" id="arcade">
+      <canvas id="c" width="640" height="640"></canvas>
+      <div class="crt-scanlines"></div>
+    </div>
+    <div class="arcade-footer">
+      <div>[<span>W / ↑</span>] DRIVE＋CHARGE</div>
+      <div>[<span>SPACE / J</span>] FIRE PULSE</div>
+      <div>[<span>CLICK</span>] COIN / START</div>
+    </div>
+  </div>
+
+  <script>
+    /* =====================================================================
+     * NIGHT CHASE v6 Cockpit Cut (Headlight Edition) - Complete Standalone Arcade Game
+     * Conforms to 1976 Arcade Hardware Constraints:
+     * - Screen: Single screen, non-scrolling (320x320 logic scaled to 640x640)
+     * - Color: Strict 4-color palette (#000000, #24307a, #ffb000, #ffffff)
+     * - Audio: Strictly 5 synthetic sound channels (no external audio assets)
+     * - Process: Active objects <= 10
+     * - State: ATTRACT -> PLAY -> WIN / LOSE -> RESTART
+     * - Input: Edge-triggered flash key (no auto-repeat drain)
+     * ===================================================================== */
+
+    // ---------------------------------------------------------------------
+    // MODULE 1: Deterministic Logic Core
+    // ---------------------------------------------------------------------
+    function mulberry32(a) {
+      let seed = (a >>> 0) || 1;
+      return function() {
+        let t = (seed += 0x6D2B79F5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const STRICT_PALETTE = new URLSearchParams(location.search).has('strictPalette');
+    const MARKER_ROWS = 6;
+    const MARKER_SPACING = 35;
+    const MAX_BEAM_DEPTH = 95;
+
+    function getStageConfig(t, firstAttack) {
+      if (t < 25) {
+        return {
+          lurkDuration: firstAttack ? 1.5 : 2.4,
+          lungeDuration: firstAttack ? 2.2 : 1.6,
+          perfectRatio: 0.44
+        };
+      } else if (t < 55) {
+        return {
+          lurkDuration: 2.0,
+          lungeDuration: 1.2,
+          perfectRatio: 0.38
+        };
+      } else {
+        return {
+          lurkDuration: 1.2,
+          lungeDuration: 0.9,
+          perfectRatio: 0.34
+        };
+      }
+    }
+
+    const Logic = {
+      createState(seed = 1) {
+        const s = {
+          seed,
+          rng: mulberry32(seed),
+          mode: 'PLAY',
+          t: 0,
+          score: 0,
+          scoreBank: 0,
+          hits: 0,
+          battery: 70,
+          speed: 1.0,
+          x: 0,
+          vx: 0,
+          steer: 0,
+          combo: 0,
+          stallTimer: 0,
+          recoveryTimer: 0,
+          recoverySide: 0,
+          signal: { tuned: 50, target: 72, lock: 0, compared: false, stableFor: 0 },
+          monster: {
+            mode: 'LURK',
+            side: 'LEFT',
+            timer: 0,
+            duration: 1.5,
+            firstAttack: true,
+            x: -55,
+            z: 100,
+            distance: 24,
+            inPerfectWindow: false,
+            variant: 'STALKER'
+          },
+          rock: {
+            active: false,
+            x: 0,
+            z: 0,
+            timer: 9999.0
+          },
+          markers: [],
+          cues: {
+            speedTipDone: false,
+            steerTipDone: false,
+            flashTipDone: false,
+            currentTip: '↑ 加速＝充電'
+          }
+        };
+        return Logic.reset(s);
+      },
+
+      reset(s) {
+        s.rng = mulberry32(s.seed);
+        s.mode = 'PLAY';
+        s.t = 0;
+        s.score = 0;
+        s.scoreBank = 0;
+        s.hits = 0;
+        s.battery = 70;
+        s.speed = 1.0;
+        s.x = 0;
+        s.vx = 0;
+        s.steer = 0;
+        s.combo = 0;
+        s.stallTimer = 0;
+        s.recoveryTimer = 0;
+        s.recoverySide = 0;
+        s.signal = { tuned: 50, target: 72, lock: 0, compared: false, stableFor: 0 };
+
+        s.monster = {
+          mode: 'LURK',
+          side: 'LEFT',
+          timer: 0,
+          duration: 1.5,
+          firstAttack: true,
+          x: -55,
+          z: 100,
+          distance: 24,
+          inPerfectWindow: false,
+          variant: 'STALKER'
+        };
+
+        s.rock = {
+          active: false,
+          x: 0,
+          z: 0,
+          timer: 9999.0
+        };
+
+        s.markers = [];
+        for (let i = 0; i < MARKER_ROWS; i++) {
+          s.markers.push({
+            z: 20 + i * MARKER_SPACING,
+            leftX: -50,
+            rightX: 50
+          });
+        }
+
+        s.cues = {
+          speedTipDone: false,
+          steerTipDone: false,
+          flashTipDone: false,
+          currentTip: '↑ 加速＝充電'
+        };
+
+        return s;
+      },
+
+      beamDepth(state) {
+        if (!state || state.battery <= 0) return 0;
+        return (clamp(state.battery, 0, 100) / 100) * MAX_BEAM_DEPTH;
+      },
+
+      isLit(state, x, z) {
+        const depth = Logic.beamDepth(state);
+        if (depth <= 0 || z <= 0 || z > depth) return false;
+        return true;
+      },
+
+      activeObjects(state) {
+        if (!state || state.mode !== 'PLAY') return 0;
+        let count = 2; // Car (1) + Monster (1)
+        if (state.rock && state.rock.active) count += 1;
+        const depth = Logic.beamDepth(state);
+        if (depth > 0 && state.markers) {
+          for (const m of state.markers) {
+            if (m.z > 0 && m.z <= depth) {
+              if (Logic.isLit(state, m.leftX, m.z)) count += 1;
+              if (Logic.isLit(state, m.rightX, m.z)) count += 1;
+            }
+          }
+        }
+        return count;
+      },
+
+      step(state, input, dt) {
+        if (state.mode !== 'PLAY') return [];
+
+        const events = [];
+        const up = !!input.up;
+        const down = !!input.down;
+        const left = !!input.left;
+        const right = !!input.right;
+        const press = !!input.press;
+
+        // Four-stage interception loop: receive -> compare -> tune -> fire.
+        // A/D now controls the receiver dial instead of steering the car.
+        const sig = state.signal || (state.signal = { tuned: 50, target: 72, lock: 0, compared: false, stableFor: 0 });
+        const variantOffset = state.monster.variant === 'HOWLER' ? 17 : state.monster.variant === 'MIMIC' ? -13 : 0;
+        sig.target = clamp((state.monster.side === 'LEFT' ? 34 : 66) + variantOffset, 8, 92);
+        const tuneDir = (right ? 1 : 0) - (left ? 1 : 0);
+        sig.tuned = clamp(sig.tuned + tuneDir * 34 * dt, 0, 100);
+        const signalPresent = state.monster.mode === 'STALK' || state.monster.mode === 'LUNGE';
+        sig.compared = signalPresent && state.monster.timer > 0.18;
+        const error = Math.abs(sig.tuned - sig.target);
+        if (sig.compared && error <= 22) sig.stableFor += dt; else sig.stableFor = Math.max(0, sig.stableFor - dt * 0.7);
+        if (sig.compared && error <= 8) sig.lock = clamp(sig.lock + dt * 2.4, 0, 1);
+        else if (sig.compared && error <= 22) sig.lock = clamp(sig.lock + dt * 0.95, 0, 1);
+        else sig.lock = clamp(sig.lock - dt * 0.35, 0, 1);
+        // Soft magnetic assist near the target so tuning stays readable under pressure.
+        if (sig.compared && tuneDir === 0 && error <= 10) sig.tuned += (sig.target - sig.tuned) * Math.min(1, dt * 3.2);
+
+        // 1. Time advancement and Daybreak (Win) check
+        state.t += dt;
+        if (state.t >= 90) {
+          state.mode = 'WIN';
+          const bonus = 5000 + Math.floor(state.battery) * 50;
+          state.score += bonus;
+          events.push({ type: 'win', score: state.score });
+          return events;
+        }
+
+        // 2. Speed and Stall recovery
+        if (state.stallTimer > 0) {
+          state.stallTimer -= dt;
+          state.speed = Math.min(state.speed, 0.8);
+        } else {
+          if (up && !down) {
+            state.speed = Math.min(1.8, state.speed + 1.2 * dt);
+          } else if (down && !up) {
+            state.speed = Math.max(0.5, state.speed - 1.5 * dt);
+          } else {
+            if (state.speed > 1.0) {
+              state.speed = Math.max(1.0, state.speed - 0.8 * dt);
+            } else if (state.speed < 1.0) {
+              state.speed = Math.min(1.0, state.speed + 0.8 * dt);
+            }
+          }
+        }
+
+        // 3. Battery dynamics: (speed - 1.0) * 8
+        state.battery += (state.speed - 1.0) * 8 * dt;
+        state.battery = clamp(state.battery, 0, 100);
+
+        // 4. Steering and lateral physics
+        const steerTarget = 0; // A/D are reserved for receiver tuning.
+        state.steer += (steerTarget - state.steer) * Math.min(1, 12 * dt);
+        state.vx += steerTarget * 360 * dt;
+        state.vx *= Math.pow(0.2, dt);
+        state.x += state.vx * dt;
+
+        // 5. Road edge check
+        if (Math.abs(state.x) > 75) {
+          state.x = Math.sign(state.x) * 75;
+          state.vx *= -0.25;
+          state.speed = 0.5;
+          state.stallTimer = 1.0;
+          events.push({ type: 'crash', reason: 'edge' });
+        }
+
+        // 6. Knockback & counter-steer recovery
+        if (state.recoveryTimer > 0) {
+          state.recoveryTimer -= dt;
+          const counterSteer = (state.recoverySide < 0 && right) || (state.recoverySide > 0 && left);
+          if (counterSteer) {
+            state.vx += -state.recoverySide * 480 * dt;
+            if (Math.sign(state.vx) !== state.recoverySide || Math.abs(state.x) < 30) {
+              state.recoveryTimer = 0;
+              state.score += 500;
+              events.push({ type: 'save', score: 500 });
+            }
+          }
+        }
+
+        // 7. Driving score accrual
+        state.scoreBank += state.speed * 40 * dt;
+        const gained = Math.floor(state.scoreBank);
+        if (gained > 0) {
+          state.score += gained;
+          state.scoreBank -= gained;
+        }
+
+        // 8. Road markers movement
+        if (state.markers) {
+          const moveDist = state.speed * 40 * dt;
+          for (const m of state.markers) {
+            m.z -= moveDist;
+            if (m.z <= 0) {
+              m.z += MARKER_ROWS * MARKER_SPACING;
+            }
+          }
+        }
+
+        // 9. Rock obstacle update & collision
+        if (state.rock) {
+          if (!state.rock.active) {
+            state.rock.timer -= dt;
+            if (state.rock.timer <= 0 && state.t > 4.0) {
+              const lanes = [-40, 0, 40];
+              const laneIdx = Math.floor(state.rng() * 3);
+              state.rock.active = true;
+              state.rock.x = lanes[laneIdx];
+              state.rock.z = 110;
+              state.rock.timer = 4.0 + state.rng() * 4.0;
+            }
+          } else {
+            state.rock.z -= state.speed * 40 * dt;
+            if (state.rock.z <= 6 && state.rock.z >= -6 && Math.abs(state.x - state.rock.x) < 22) {
+              state.rock.active = false;
+              state.speed = 0.5;
+              state.stallTimer = 1.0;
+              if (state.monster.mode === 'STALK') {
+                state.monster.distance = Math.max(0, state.monster.distance - 10);
+              } else if (state.monster.mode === 'LURK') {
+                state.monster.timer = Math.max(state.monster.timer, state.monster.duration - 0.5);
+              }
+              events.push({ type: 'crash', reason: 'rock' });
+            } else if (state.rock.z < -10) {
+              state.rock.active = false;
+            }
+          }
+        }
+
+        // 10. Monster state machine
+        const m = state.monster;
+        // Assisted tuning: once a real signal is detected, the threat advances more slowly
+        // until a usable lock is acquired. This creates a fair reaction window.
+        const threatTimeScale = sig.compared && sig.lock < 0.55 ? 0.48 : (sig.lock < 0.82 ? 0.78 : 1);
+        const monsterDt = dt * threatTimeScale;
+        const stageCfg = getStageConfig(state.t, m.firstAttack);
+
+        if (m.mode === 'LURK') {
+          m.timer += monsterDt;
+          m.x = (m.side === 'LEFT' ? -55 : 55);
+          m.z = 100;
+          m.inPerfectWindow = false;
+          if (m.timer >= m.duration) {
+            m.mode = 'STALK';
+            m.timer = 0;
+            m.distance = 24;
+            m.z = 80;
+            // Enemy types unlock progressively and change actual behaviour.
+            const typeRoll = state.rng();
+            m.variant = state.t < 25 ? 'STALKER' :
+              (typeRoll < .34 ? 'RUSHER' : (typeRoll < .67 ? 'JAMMER' : 'STALKER'));
+          }
+        } else if (m.mode === 'STALK') {
+          const typeSpeed = m.variant === 'RUSHER' ? 1.65 : (m.variant === 'JAMMER' ? .88 : 1);
+          const stalkSpeed = Math.max(4, 10 - 4 * state.speed) * typeSpeed;
+          m.distance -= stalkSpeed * monsterDt;
+          const progress = clamp(1 - m.distance / 24, 0, 1);
+          m.z = 80 - progress * 55;
+          m.x = (m.side === 'LEFT' ? -55 : 55);
+          m.inPerfectWindow = false;
+          if (m.distance <= 0) {
+            m.mode = 'LUNGE';
+            m.timer = 0;
+            m.duration = stageCfg.lungeDuration;
+            m.perfectRatio = stageCfg.perfectRatio;
+          }
+        } else if (m.mode === 'LUNGE') {
+          m.timer += monsterDt;
+          const p = Math.min(1, m.timer / m.duration);
+          const startX = (m.side === 'LEFT' ? -55 : 55);
+          m.x = startX + (state.x - startX) * p;
+          m.z = 25 * (1 - p);
+          const baseRatio = (m.perfectRatio !== undefined) ? m.perfectRatio : stageCfg.perfectRatio;
+          // Keep a minimum readable window. Faster RUSHER attacks receive a small fairness bonus.
+          const ratio = Math.max(baseRatio, m.variant === 'RUSHER' ? 0.40 : 0.34);
+          m.inPerfectWindow = (p >= (1 - ratio));
+
+          if (m.timer >= m.duration) {
+            // Monster reached car: HIT
+            state.hits += 1;
+            state.combo = 0;
+            state.speed = 0.35;
+            events.push({ type: 'hit', hits: state.hits });
+            if (state.hits >= 3) {
+              state.mode = 'LOSE';
+              events.push({ type: 'lose', score: state.score });
+              return events;
+            } else {
+              m.mode = 'RECOVER';
+              m.timer = 0;
+              m.duration = 1.2;
+              m.x = startX;
+              m.z = 100;
+              m.inPerfectWindow = false;
+            }
+          }
+        } else if (m.mode === 'RECOVER') {
+          m.timer += monsterDt;
+          m.inPerfectWindow = false;
+          if (m.timer >= m.duration) {
+            m.mode = 'LURK';
+            m.timer = 0;
+            m.firstAttack = false;
+            const nextCfg = getStageConfig(state.t, false);
+            m.duration = nextCfg.lurkDuration;
+            if (state.x < -20) {
+              m.side = 'RIGHT';
+            } else if (state.x > 20) {
+              m.side = 'LEFT';
+            } else {
+              m.side = state.rng() < 0.5 ? 'LEFT' : 'RIGHT';
+            }
+            m.x = (m.side === 'LEFT' ? -55 : 55);
+            m.z = 100;
+          }
+        }
+
+        // 11. Flash Action evaluation
+        if (press) {
+          if (state.battery < 25) {
+            events.push({ type: 'click' });
+          } else {
+            const lit = Logic.isLit(state, m.x, m.z);
+            const lockReady = sig.compared && sig.lock >= 0.55;
+            state.battery -= 25;
+            if (!lit || !lockReady || m.mode === 'LURK' || m.mode === 'RECOVER') {
+              sig.lock = Math.max(0, sig.lock - 0.35);
+              events.push({ type: 'miss' });
+            } else if (m.mode === 'LUNGE' && m.inPerfectWindow && sig.lock >= 0.82) {
+              state.combo = Math.min(5, state.combo + 1);
+              state.hits = 0;
+              const pts = 1000 * state.combo;
+              state.score += pts;
+              const knockSide = (m.side === 'LEFT' ? -1 : 1);
+              state.recoverySide = knockSide;
+              state.recoveryTimer = 1.5;
+              state.vx += knockSide * (160 + state.speed * 55);
+              m.mode = 'RECOVER';
+              m.timer = 0;
+              m.duration = 1.5;
+              m.x = knockSide * 60;
+              m.z = 100;
+              m.inPerfectWindow = false;
+              sig.lock = 0; sig.compared = false; sig.stableFor = 0;
+              events.push({ type: 'perfect', score: pts, combo: state.combo });
+            } else {
+              // Early flash (lit during STALK or early LUNGE)
+              state.combo = 0;
+              state.score += 100;
+              m.mode = 'RECOVER';
+              m.timer = 0;
+              m.duration = 1.0;
+              m.x = (m.side === 'LEFT' ? -55 : 55);
+              m.z = 100;
+              m.inPerfectWindow = false;
+              sig.lock = 0; sig.compared = false; sig.stableFor = 0;
+              events.push({ type: 'early', score: 100 });
+            }
+          }
+        }
+
+        // 12. Non-blocking tutorial cue progression
+        if (state.cues) {
+          if (!state.cues.speedTipDone) {
+            if (state.speed >= 1.3 || state.t >= 6.0) {
+              state.cues.speedTipDone = true;
+            }
+          }
+          if (!state.cues.steerTipDone) {
+            if ((m.mode === 'STALK' || m.mode === 'LUNGE') && Logic.isLit(state, m.x, m.z)) {
+              state.cues.steerTipDone = true;
+            }
+          }
+          if (!state.cues.flashTipDone) {
+            if (events.some(e => e.type === 'perfect')) {
+              state.cues.flashTipDone = true;
+            }
+          }
+
+          // Contextual prompt selection (prioritizing immediate action cues)
+          if (!state.cues.flashTipDone && m.mode === 'LUNGE' && m.inPerfectWindow && Logic.isLit(state, m.x, m.z)) {
+            state.cues.currentTip = '按按鈕閃燈！';
+          } else if (!state.cues.steerTipDone && (m.mode === 'STALK' || m.mode === 'LUNGE') && !Logic.isLit(state, m.x, m.z)) {
+            state.cues.currentTip = (m.side === 'LEFT' ? '眼睛在左邊！往 ← 轉' : '眼睛在右邊！往 → 轉');
+          } else if (!state.cues.speedTipDone) {
+            state.cues.currentTip = '↑ 加速＝充電';
+          } else {
+            state.cues.currentTip = null;
+          }
+        }
+
+        return events;
+      }
+    };
+
+    // ---------------------------------------------------------------------
+    // MODULE 2: Web Audio Synthesizer (Strictly 5 Arcade Electronic Sounds)
+    // ---------------------------------------------------------------------
+    const SOUND_TYPES = Object.freeze([
+      'engine',
+      'heartbeat',
+      'flash',
+      'crash',
+      'melody'
+    ]);
+
+    class SoundSystem {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.engineOsc = null;
+        this.engineFilter = null;
+        this.engineGain = null;
+        this.lastHeartbeatTime = 0;
+        this.isMuted = false;
+      }
+
+      init(customCtx = null) {
+        if (this.ctx) {
+          if (this.ctx.state === 'suspended') {
+            try { this.ctx.resume(); } catch (_) {}
+          }
+          return;
+        }
+
+        if (customCtx) {
+          this.ctx = customCtx;
+        } else {
+          const AudioCtx = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) ||
+                           (typeof AudioContext !== 'undefined' ? AudioContext : null);
+          if (!AudioCtx) return;
+
+          try {
+            this.ctx = new AudioCtx();
+          } catch (_) {
+            return;
+          }
+        }
+
+        if (this.ctx && this.ctx.state === 'suspended') {
+          try { this.ctx.resume(); } catch (_) {}
+        }
+
+        try {
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+        } catch (_) {}
+
+        // Channel 1: Engine (Triangle wave with lowpass filter)
+        try {
+          this.engineOsc = this.ctx.createOscillator();
+          this.engineOsc.type = 'triangle';
+          this.engineOsc.frequency.setValueAtTime(40, this.ctx.currentTime);
+
+          this.engineFilter = this.ctx.createBiquadFilter();
+          this.engineFilter.type = 'lowpass';
+          this.engineFilter.frequency.setValueAtTime(220, this.ctx.currentTime);
+
+          this.engineGain = this.ctx.createGain();
+          this.engineGain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+
+          this.engineOsc.connect(this.engineFilter);
+          this.engineFilter.connect(this.engineGain);
+          if (this.masterGain) {
+            this.engineGain.connect(this.masterGain);
+          } else {
+            this.engineGain.connect(this.ctx.destination);
+          }
+          this.engineOsc.start();
+        } catch (_) {}
+      }
+
+      resume() {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          try { this.ctx.resume(); } catch (_) {}
+        }
+      }
+
+      updateEngine(speed, active = true) {
+        if (!this.ctx || !this.engineOsc || this.isMuted) return;
+
+        if (this.engineGain) {
+          try {
+            const targetGain = active ? 0.06 : 0;
+            this.engineGain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.05);
+          } catch (_) {}
+        }
+        if (!active) return;
+
+        const s = typeof speed === 'number' && !isNaN(speed) ? speed : 0.35;
+        const ratio = Math.max(0, Math.min(1, (s - 0.35) / (1.8 - 0.35)));
+        const targetFreq = Math.max(40, Math.min(90, 40 + ratio * 50));
+        try {
+          this.engineOsc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.08);
+        } catch (_) {
+          this.engineOsc.frequency.value = targetFreq;
+        }
+      }
+
+      updateHeartbeat(distance, active = true) {
+        if (!this.ctx || !active || this.isMuted) return;
+
+        const now = this.ctx.currentTime;
+        const d = Math.max(0, Number(distance) || 0);
+        const distRatio = Math.min(1, Math.max(0, d / 24));
+        const interval = 0.25 + distRatio * (0.9 - 0.25);
+
+        if (now - this.lastHeartbeatTime >= interval) {
+          this.lastHeartbeatTime = now;
+          this.playHeartbeatPulse(now);
+        }
+      }
+
+      playHeartbeatPulse(now = (this.ctx ? this.ctx.currentTime : 0)) {
+        if (!this.ctx || this.isMuted) return;
+        const dest = this.masterGain || this.ctx.destination;
+
+        // Pulse 1: "lub" (65Hz -> 40Hz)
+        try {
+          const osc1 = this.ctx.createOscillator();
+          const gain1 = this.ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(65, now);
+          osc1.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+
+          gain1.gain.setValueAtTime(0.18, now);
+          gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+          osc1.connect(gain1);
+          gain1.connect(dest);
+          osc1.start(now);
+          osc1.stop(now + 0.09);
+        } catch (_) {}
+
+        // Pulse 2: "dub" (50Hz -> 32Hz, 0.12s later)
+        const t2 = now + 0.12;
+        try {
+          const osc2 = this.ctx.createOscillator();
+          const gain2 = this.ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(50, t2);
+          osc2.frequency.exponentialRampToValueAtTime(32, t2 + 0.08);
+
+          gain2.gain.setValueAtTime(0.15, t2);
+          gain2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.08);
+
+          osc2.connect(gain2);
+          gain2.connect(dest);
+          osc2.start(t2);
+          osc2.stop(t2 + 0.09);
+        } catch (_) {}
+      }
+
+      playFlash(type = 'perfect') {
+        if (!this.ctx || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const dest = this.masterGain || this.ctx.destination;
+
+        if (type === 'click') {
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
+
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+            osc.connect(gain);
+            gain.connect(dest);
+            osc.start(now);
+            osc.stop(now + 0.03);
+          } catch (_) {}
+          return;
+        }
+
+        const noiseDuration = type === 'perfect' ? 0.08 : (type === 'early' ? 0.06 : 0.04);
+        const sampleRate = this.ctx.sampleRate || 44100;
+        const bufferSize = Math.floor(sampleRate * noiseDuration);
+
+        if (this.ctx.createBuffer && this.ctx.createBufferSource) {
+          try {
+            const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+              data[i] = Math.random() * 2 - 1;
+            }
+            const noiseSource = this.ctx.createBufferSource();
+            noiseSource.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(type === 'perfect' ? 1400 : 800, now);
+            filter.Q.setValueAtTime(1.5, now);
+
+            const noiseGain = this.ctx.createGain();
+            const nGainVal = type === 'perfect' ? 0.22 : 0.12;
+            noiseGain.gain.setValueAtTime(nGainVal, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDuration);
+
+            noiseSource.connect(filter);
+            filter.connect(noiseGain);
+            noiseGain.connect(dest);
+            noiseSource.start(now);
+          } catch (_) {}
+        }
+
+        let startFreq = 400;
+        let endFreq = 1400;
+        let toneDuration = 0.16;
+        let toneVol = 0.20;
+
+        if (type === 'perfect') {
+          startFreq = 500;
+          endFreq = 1600;
+          toneDuration = 0.18;
+          toneVol = 0.25;
+        } else if (type === 'early') {
+          startFreq = 350;
+          endFreq = 700;
+          toneDuration = 0.12;
+          toneVol = 0.15;
+        } else {
+          startFreq = 220;
+          endFreq = 380;
+          toneDuration = 0.10;
+          toneVol = 0.10;
+        }
+
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(startFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(endFreq, now + toneDuration);
+
+          gain.gain.setValueAtTime(toneVol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + toneDuration);
+
+          osc.connect(gain);
+          gain.connect(dest);
+          osc.start(now);
+          osc.stop(now + toneDuration);
+        } catch (_) {}
+      }
+
+      playCrash() {
+        if (!this.ctx || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const duration = 0.35;
+        const dest = this.masterGain || this.ctx.destination;
+
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(140, now);
+          osc.frequency.exponentialRampToValueAtTime(35, now + duration);
+
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          if (this.ctx.createWaveShaper) {
+            try {
+              const shaper = this.ctx.createWaveShaper();
+              const sampleCount = 256;
+              const curve = new Float32Array(sampleCount);
+              for (let i = 0; i < sampleCount; ++i) {
+                const x = (i * 2) / sampleCount - 1;
+                curve[i] = Math.tanh(x * 2.5);
+              }
+              shaper.curve = curve;
+              osc.connect(shaper);
+              shaper.connect(gain);
+            } catch (_) {
+              osc.connect(gain);
+            }
+          } else {
+            osc.connect(gain);
+          }
+
+          gain.connect(dest);
+          osc.start(now);
+          osc.stop(now + duration);
+        } catch (_) {}
+      }
+
+      playMelody(type = 'coin') {
+        if (!this.ctx || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const dest = this.masterGain || this.ctx.destination;
+
+        let notes = [];
+        let noteDuration = 0.08;
+
+        if (type === 'win') {
+          notes = [523.25, 659.25, 783.99, 1046.50]; // Ascending C major
+          noteDuration = 0.10;
+        } else if (type === 'lose') {
+          notes = [311.13, 261.63, 207.65, 174.61]; // Descending minor
+          noteDuration = 0.14;
+        } else {
+          notes = [659.25, 830.61, 987.77, 1318.51]; // Coin chirp
+          noteDuration = 0.06;
+        }
+
+        notes.forEach((freq, idx) => {
+          const noteStart = now + idx * noteDuration;
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(freq, noteStart);
+
+            gain.gain.setValueAtTime(0.12, noteStart);
+            gain.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDuration * 1.2);
+
+            osc.connect(gain);
+            gain.connect(dest);
+            osc.start(noteStart);
+            osc.stop(noteStart + noteDuration * 1.2);
+          } catch (_) {}
+        });
+      }
+
+      playDamageHeartbeat() {
+        if (!this.ctx || !this.masterGain || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        // A rapid triple pulse clearly communicates that the creature hit the car.
+        [0, 0.16, 0.38].forEach((delay, index) => {
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            const filter = this.ctx.createBiquadFilter();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(index === 2 ? 48 : 58, now + delay);
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(145, now + delay);
+            gain.gain.setValueAtTime(0.001, now + delay);
+            gain.gain.exponentialRampToValueAtTime(index === 2 ? 0.20 : 0.15, now + delay + 0.018);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.13);
+            osc.connect(filter); filter.connect(gain); gain.connect(this.masterGain);
+            osc.start(now + delay); osc.stop(now + delay + 0.15);
+          } catch (_) {}
+        });
+      }
+
+      handleEvents(events) {
+        if (!events || !Array.isArray(events)) return;
+        for (const ev of events) {
+          if (!ev || !ev.type) continue;
+          switch (ev.type) {
+            case 'perfect':
+            case 'early':
+            case 'miss':
+            case 'click':
+              this.playFlash(ev.type);
+              break;
+            case 'hit':
+              this.playDamageHeartbeat();
+              break;
+            case 'crash':
+            case 'stall':
+              this.playCrash();
+              break;
+            case 'win':
+              this.playMelody('win');
+              break;
+            case 'lose':
+              this.playMelody('lose');
+              break;
+            case 'coin':
+            case 'start':
+              this.playMelody('coin');
+              break;
+          }
+        }
+      }
+
+      processEvents(events) {
+        this.handleEvents(events);
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // MODULE 3: Perspective 4-Color Renderer
+    // ---------------------------------------------------------------------
+    const WIDTH = 320;
+    const HEIGHT = 320;
+    const HORIZON_Y = 110;
+    const DASHBOARD_Y = 260;
+
+    const PALETTE = Object.freeze([
+      '#000000', // C0 Black
+      '#24307a', // C1 Deep Blue
+      '#ffb000', // C2 Amber
+      '#ffffff'  // C3 White
+    ]);
+
+    const PALETTE_RGB = Object.freeze([
+      Object.freeze([0, 0, 0]),
+      Object.freeze([36, 48, 122]),
+      Object.freeze([255, 176, 0]),
+      Object.freeze([255, 255, 255])
+    ]);
+
+    function quantizeRgb(r, g, b) {
+      let bestDist = Infinity;
+      let bestIdx = 0;
+      for (let i = 0; i < 4; i++) {
+        const p = PALETTE_RGB[i];
+        const dr = r - p[0];
+        const dg = g - p[1];
+        const db = b - p[2];
+        const d = dr * dr + dg * dg + db * db;
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+          if (d === 0) break;
+        }
+      }
+      return PALETTE_RGB[bestIdx];
+    }
+
+    function enforcePalette(ctx) {
+      if (!ctx || typeof ctx.getImageData !== 'function' || typeof ctx.putImageData !== 'function') {
+        return;
+      }
+      try {
+        const img = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+        const data = img.data;
+        const len = data.length;
+        for (let i = 0; i < len; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+
+          // Exact palette fast-path
+          if (r === 0 && g === 0 && b === 0) { data[i + 3] = 255; continue; }
+          if (r === 255 && g === 255 && b === 255) { data[i + 3] = 255; continue; }
+          if (r === 36 && g === 48 && b === 122) { data[i + 3] = 255; continue; }
+          if (r === 255 && g === 176 && b === 0) { data[i + 3] = 255; continue; }
+
+          const q = quantizeRgb(r, g, b);
+          data[i] = q[0];
+          data[i + 1] = q[1];
+          data[i + 2] = q[2];
+          data[i + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+      } catch (_) {}
+    }
+
+    function project(x, z, carX = 0) {
+      const safeZ = Math.max(z, 1);
+      const s = 40 / safeZ;
+      const screenX = 160 + (x - carX) * s;
+      const screenY = 110 + (2800 / safeZ);
+      return { x: screenX, y: screenY, s };
+    }
+
+    function isLit(state, x, z) {
+      if (!state || (state.battery ?? 70) <= 0) return false;
+      const depth = (Math.min(100, Math.max(0, state.battery ?? 70)) / 100) * 95;
+      if (depth <= 0 || z <= 0 || z > depth) return false;
+      const aim = (state.aim !== undefined ? state.aim : state.steer) || 0;
+      const beamCenter = (state.x || 0) + aim * (0.6 * z);
+      const beamHalfWidth = 16 + z * 0.35;
+      return Math.abs(x - beamCenter) <= beamHalfWidth;
+    }
+
+    function renderSky(ctx, state) {
+      const t = state?.t || 0;
+      const progress = Math.min(1, Math.max(0, t / 90));
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, WIDTH, HORIZON_Y);
+
+      if (progress > 0.05) {
+        const skyHeight = Math.min(HORIZON_Y, Math.floor(progress * 130));
+        const startY = Math.max(0, HORIZON_Y - skyHeight);
+
+        ctx.fillStyle = '#24307a';
+        for (let y = startY; y < HORIZON_Y; y += 2) {
+          const rel = (y - startY) / (HORIZON_Y - startY);
+          if (rel > 0.6) {
+            ctx.fillRect(0, y, WIDTH, 1);
+          } else if (rel > 0.3) {
+            for (let x = (y % 4 === 0 ? 0 : 2); x < WIDTH; x += 4) {
+              ctx.fillRect(x, y, 2, 1);
+            }
+          } else {
+            for (let x = (y % 8 === 0 ? 0 : 4); x < WIDTH; x += 8) {
+              ctx.fillRect(x, y, 2, 1);
+            }
+          }
+        }
+      }
+
+      if (progress > 0.45) {
+        const amberProgress = (progress - 0.45) / 0.55;
+        const amberLines = Math.min(12, Math.floor(amberProgress * 14));
+        ctx.fillStyle = '#ffb000';
+        for (let i = 0; i < amberLines; i++) {
+          const y = HORIZON_Y - 1 - i;
+          if (i < 3) {
+            ctx.fillRect(0, y, WIDTH, 1);
+          } else if (i % 2 === 0) {
+            for (let x = (i % 4 === 0 ? 0 : 2); x < WIDTH; x += 4) {
+              ctx.fillRect(x, y, 2, 1);
+            }
+          }
+        }
+      }
+
+      ctx.fillStyle = progress > 0.4 ? '#ffb000' : '#24307a';
+      ctx.fillRect(0, HORIZON_Y, WIDTH, 1);
+    }
+
+    function renderHeadlights(ctx, state) {
+      const battery = Math.max(0, state?.battery ?? 70);
+      if (battery <= 0) return;
+
+      const depth = (Math.min(100, battery) / 100) * 95;
+      const aim = (state?.aim !== undefined ? state?.aim : state?.steer) || 0;
+      const isFlashing = !!(state?.isFlashing || (state?.flashTime && state.flashTime > 0));
+
+      const pFarCenter = project((state?.x || 0) + aim * (0.6 * depth), depth, state?.x || 0);
+      const farHalfWidthWorld = (16 + depth * 0.35) * (isFlashing ? 1.3 : 1.0);
+      const pFarLeft = project((state?.x || 0) + aim * (0.6 * depth) - farHalfWidthWorld, depth, state?.x || 0);
+      const pFarRight = project((state?.x || 0) + aim * (0.6 * depth) + farHalfWidthWorld, depth, state?.x || 0);
+
+      const nearZ = 18;
+      const nearHalfWidthWorld = (16 + nearZ * 0.35) * (isFlashing ? 1.3 : 1.0);
+      const pNearLeft = project((state?.x || 0) - nearHalfWidthWorld, nearZ, state?.x || 0);
+      const pNearRight = project((state?.x || 0) + nearHalfWidthWorld, nearZ, state?.x || 0);
+
+      const topY = Math.max(HORIZON_Y + 1, Math.floor(pFarCenter.y));
+      const bottomY = Math.min(DASHBOARD_Y - 1, Math.floor(pNearLeft.y));
+
+      if (isFlashing) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(pNearLeft.x, bottomY);
+        ctx.lineTo(pFarLeft.x, topY);
+        ctx.lineTo(pFarRight.x, topY);
+        ctx.lineTo(pNearRight.x, bottomY);
+        ctx.closePath();
+        ctx.fill();
+        return;
+      }
+
+      for (let y = topY; y <= bottomY; y += 2) {
+        const t = (y - topY) / Math.max(1, (bottomY - topY));
+        const leftX = pFarLeft.x + (pNearLeft.x - pFarLeft.x) * t;
+        const rightX = pFarRight.x + (pNearRight.x - pFarRight.x) * t;
+        const span = rightX - leftX;
+        if (span <= 1) continue;
+
+        if (t > 0.7) {
+          ctx.fillStyle = (y % 4 === 0) ? '#ffffff' : '#ffb000';
+          for (let x = Math.floor(leftX); x < rightX; x += 2) {
+            if ((x + y) % 4 === 0) ctx.fillRect(x, y, 2, 1);
+          }
+        } else if (t > 0.35) {
+          ctx.fillStyle = '#ffb000';
+          for (let x = Math.floor(leftX); x < rightX; x += 4) {
+            if ((x + y) % 4 === 0) ctx.fillRect(x, y, 2, 1);
+          }
+        } else {
+          ctx.fillStyle = '#ffb000';
+          for (let x = Math.floor(leftX); x < rightX; x += 8) {
+            if ((x + y) % 8 === 0) ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+
+      ctx.strokeStyle = '#ffb000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pNearLeft.x, bottomY);
+      ctx.lineTo(pFarLeft.x, topY);
+      ctx.moveTo(pNearRight.x, bottomY);
+      ctx.lineTo(pFarRight.x, topY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(160 - 24, DASHBOARD_Y - 3, 6, 3);
+      ctx.fillRect(160 + 18, DASHBOARD_Y - 3, 6, 3);
+    }
+
+    function renderRoad(ctx, state) {
+      const carX = state?.x || 0;
+      const speed = state?.speed || 1.0;
+      const stretch = speed >= 1.3 ? 1.35 : 1.0;
+
+      if (state?.markers && Array.isArray(state.markers)) {
+        for (const m of state.markers) {
+          if (isLit(state, m.leftX, m.z)) {
+            const pl = project(m.leftX, m.z, carX);
+            const w = Math.max(2, Math.round(5 * pl.s));
+            const h = Math.max(3, Math.round(12 * pl.s * stretch));
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(Math.round(pl.x - w / 2), Math.round(pl.y), w, h);
+          }
+          if (isLit(state, m.rightX, m.z)) {
+            const pr = project(m.rightX, m.z, carX);
+            const w = Math.max(2, Math.round(5 * pr.s));
+            const h = Math.max(3, Math.round(12 * pr.s * stretch));
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(Math.round(pr.x - w / 2), Math.round(pr.y), w, h);
+          }
+        }
+      }
+
+      const rock = state?.rock;
+      if (rock && rock.active && isLit(state, rock.x, rock.z)) {
+        const pr = project(rock.x, rock.z, carX);
+        const rw = Math.max(6, Math.round(20 * pr.s));
+        const rh = Math.max(4, Math.round(14 * pr.s));
+        const rx = Math.round(pr.x);
+        const ry = Math.round(pr.y);
+
+        ctx.fillStyle = '#24307a';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(rx - rw / 2, ry + rh / 2);
+        ctx.lineTo(rx - rw * 0.4, ry - rh * 0.3);
+        ctx.lineTo(rx, ry - rh / 2);
+        ctx.lineTo(rx + rw * 0.45, ry - rh * 0.2);
+        ctx.lineTo(rx + rw / 2, ry + rh / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffb000';
+        ctx.beginPath();
+        ctx.moveTo(rx - rw * 0.4, ry - rh * 0.3);
+        ctx.lineTo(rx + rw * 0.1, ry + rh * 0.2);
+        ctx.lineTo(rx + rw * 0.45, ry - rh * 0.2);
+        ctx.stroke();
+      }
+    }
+
+    function renderMonster(ctx, state) {
+      const m = state?.monster;
+      if (!m || m.mode === 'LURK') return;
+
+      const carX = state?.x || 0;
+      const pm = project(m.x, m.z, carX);
+      const lit = isLit(state, m.x, m.z);
+
+      if (!lit) {
+        const eyeSpacing = Math.max(3, Math.round(6 * pm.s));
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(Math.round(pm.x - eyeSpacing - 1), Math.round(pm.y - 1), 2, 2);
+        ctx.fillRect(Math.round(pm.x + eyeSpacing), Math.round(pm.y - 1), 2, 2);
+        return;
+      }
+
+      const s = pm.s;
+      const cx = Math.round(pm.x);
+      const cy = Math.round(pm.y);
+      const headW = Math.max(8, Math.round(26 * s));
+      const headH = Math.max(8, Math.round(24 * s));
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+
+      // Horns & cranium wireframe
+      ctx.beginPath();
+      ctx.moveTo(cx - headW * 0.6, cy - headH * 0.7);
+      ctx.lineTo(cx - headW * 0.3, cy - headH * 0.2);
+      ctx.lineTo(cx, cy - headH * 0.5);
+      ctx.lineTo(cx + headW * 0.3, cy - headH * 0.2);
+      ctx.lineTo(cx + headW * 0.6, cy - headH * 0.7);
+      ctx.lineTo(cx + headW * 0.5, cy + headH * 0.1);
+      ctx.lineTo(cx, cy + headH * 0.4);
+      ctx.lineTo(cx - headW * 0.5, cy + headH * 0.1);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Teeth
+      ctx.beginPath();
+      ctx.moveTo(cx - headW * 0.3, cy + headH * 0.05);
+      ctx.lineTo(cx - headW * 0.15, cy + headH * 0.2);
+      ctx.lineTo(cx, cy + headH * 0.05);
+      ctx.lineTo(cx + headW * 0.15, cy + headH * 0.2);
+      ctx.lineTo(cx + headW * 0.3, cy + headH * 0.05);
+      ctx.stroke();
+
+      // Eyes
+      const eyeDx = Math.max(3, Math.round(7 * s));
+      ctx.fillStyle = m.inPerfectWindow ? '#ffb000' : '#ffffff';
+      ctx.fillRect(cx - eyeDx - 1, cy - Math.round(3 * s), 3, 3);
+      ctx.fillRect(cx + eyeDx - 1, cy - Math.round(3 * s), 3, 3);
+
+      // Claws
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(cx - headW * 0.5, cy + headH * 0.2);
+      ctx.lineTo(cx - headW * 0.9, cy + headH * 0.5);
+      ctx.lineTo(cx - headW * 1.1, cy + headH * 0.3);
+      ctx.moveTo(cx - headW * 0.9, cy + headH * 0.5);
+      ctx.lineTo(cx - headW * 1.05, cy + headH * 0.6);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx + headW * 0.5, cy + headH * 0.2);
+      ctx.lineTo(cx + headW * 0.9, cy + headH * 0.5);
+      ctx.lineTo(cx + headW * 1.1, cy + headH * 0.3);
+      ctx.moveTo(cx + headW * 0.9, cy + headH * 0.5);
+      ctx.lineTo(cx + headW * 1.05, cy + headH * 0.6);
+      ctx.stroke();
+    }
+
+    function renderDashboard(ctx, state) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, DASHBOARD_Y, WIDTH, HEIGHT - DASHBOARD_Y);
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(0, DASHBOARD_Y, WIDTH, 2);
+
+      const battery = Math.max(0, Math.min(100, state?.battery ?? 70));
+      const speed = Math.max(0.5, Math.min(1.8, state?.speed ?? 1.0));
+      const hits = state?.hits || 0;
+
+      // Battery Gauge
+      ctx.fillStyle = '#ffb000';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('BATT', 12, 274);
+
+      const barX = 42;
+      const barY = 273;
+      const barW = 75;
+      const barH = 10;
+
+      ctx.strokeStyle = '#24307a';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      const tick25X = Math.round(barX + barW * 0.25);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(tick25X, barY - 2, 1, barH + 4);
+
+      const fillW = Math.round((battery / 100) * (barW - 2));
+      if (fillW > 0) {
+        ctx.fillStyle = battery < 25 ? '#24307a' : '#ffb000';
+        ctx.fillRect(barX + 1, barY + 1, fillW, barH - 2);
+
+        ctx.fillStyle = '#000000';
+        for (let sx = barX + 15; sx < barX + fillW; sx += 15) {
+          ctx.fillRect(sx, barY + 1, 1, barH - 2);
+        }
+      }
+
+      // Speed Gauge
+      ctx.fillStyle = '#ffb000';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('SPD', 188, 274);
+
+      const spdX = 212;
+      const spdY = 273;
+      const spdW = 75;
+      const spdH = 10;
+
+      ctx.strokeStyle = '#24307a';
+      ctx.strokeRect(spdX, spdY, spdW, spdH);
+
+      const normSpeed = (speed - 0.5) / (1.8 - 0.5);
+      const spdFillW = Math.round(Math.max(0, Math.min(1, normSpeed)) * (spdW - 2));
+      if (spdFillW > 0) {
+        ctx.fillStyle = speed >= 1.5 ? '#ffffff' : '#ffb000';
+        ctx.fillRect(spdX + 1, spdY + 1, spdFillW, spdH - 2);
+
+        ctx.fillStyle = '#000000';
+        for (let sx = spdX + 15; sx < spdX + spdFillW; sx += 15) {
+          ctx.fillRect(sx, spdY + 1, 1, spdH - 2);
+        }
+      }
+
+      // Hits Indicator (3 boxes)
+      const dangerY = 296;
+      for (let i = 0; i < 3; i++) {
+        const bx = 136 + i * 18;
+        ctx.strokeStyle = '#ffffff';
+        ctx.strokeRect(bx, dangerY, 12, 12);
+        if (hits > i) {
+          ctx.fillStyle = '#ffb000';
+          ctx.fillRect(bx + 2, dangerY + 2, 8, 8);
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('!', bx + 6, dangerY + 6);
+        }
+      }
+
+      // HUD Tutorial cues
+      if (state?.cues?.currentTip) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(state.cues.currentTip, 160, 246);
+      }
+
+      // Recover alert
+      if (state?.recoveryTimer && state.recoveryTimer > 0) {
+        ctx.fillStyle = '#ffb000';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(state.recoverySide < 0 ? 'COUNTER ->' : '<- COUNTER', 160, 244);
+      } else if (state?.stallTimer && state.stallTimer > 0) {
+        ctx.fillStyle = '#ffb000';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('STALL! UP TO ACCEL', 160, 244);
+      }
+    }
+
+    function renderCockpitFrame(ctx, state) {
+      // A strong first-person cockpit silhouette makes the composition distinct
+      // from a full-screen road view while keeping the four-colour restriction.
+      const shake = state?.monster?.mode === 'LUNGE' ? (Math.floor((state.t || 0) * 24) % 3) - 1 : 0;
+
+      // Windshield pillars
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(0, 34); ctx.lineTo(25, 34); ctx.lineTo(55 + shake, 236); ctx.lineTo(0, 258);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(320, 34); ctx.lineTo(295, 34); ctx.lineTo(265 + shake, 236); ctx.lineTo(320, 258);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#24307a';
+      ctx.beginPath(); ctx.moveTo(25, 34); ctx.lineTo(55 + shake, 236); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(295, 34); ctx.lineTo(265 + shake, 236); ctx.stroke();
+
+      // Rear-view mirror housing
+      const mx = 108 + shake, my = 27, mw = 104, mh = 38;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(mx - 4, my - 4, mw + 8, mh + 8);
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeRect(mx - 3, my - 3, mw + 6, mh + 6);
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(mx, my, mw, mh);
+
+      // Reflected road narrows toward the centre.
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(mx + 40, my + mh); ctx.lineTo(mx + 49, my + 13);
+      ctx.lineTo(mx + 55, my + 13); ctx.lineTo(mx + 66, my + mh);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(mx + 51, my + 18, 2, 4);
+      ctx.fillRect(mx + 51, my + 28, 2, 7);
+
+      // The pursuer is primarily communicated through the mirror.
+      const danger = clamp(1 - ((state?.monster?.distance ?? 24) / 24), 0, 1);
+      if (state?.monster?.mode !== 'LURK' && danger > 0.12) {
+        const eyeY = Math.round(my + 11 + danger * 10);
+        const eyeGap = Math.round(8 + danger * 11);
+        const eyeSize = danger > 0.72 ? 4 : 2;
+        ctx.fillStyle = danger > 0.62 ? '#ffb000' : '#ffffff';
+        ctx.fillRect(160 - eyeGap - eyeSize, eyeY, eyeSize, eyeSize);
+        ctx.fillRect(160 + eyeGap, eyeY, eyeSize, eyeSize);
+        if (danger > 0.72) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.moveTo(160 - eyeGap - 7, eyeY - 5); ctx.lineTo(160 - eyeGap + 3, eyeY + 7);
+          ctx.moveTo(160 + eyeGap + 7, eyeY - 5); ctx.lineTo(160 + eyeGap - 3, eyeY + 7);
+          ctx.stroke();
+        }
+      }
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(151, 65, 18, 10);
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(157, 65, 6, 16);
+
+      // Hood edge separates the road from the instrument panel.
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(38, 224); ctx.lineTo(95, 211); ctx.lineTo(225, 211);
+      ctx.lineTo(282, 224); ctx.lineTo(265, 246); ctx.lineTo(55, 246);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#24307a';
+      ctx.beginPath(); ctx.moveTo(38, 224); ctx.lineTo(95, 211); ctx.lineTo(225, 211); ctx.lineTo(282, 224); ctx.stroke();
+
+      // Steering wheel foreground
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(160, 290, 35, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(157, 282, 6, 30);
+      ctx.beginPath();
+      ctx.moveTo(160, 291); ctx.lineTo(137, 304); ctx.lineTo(142, 309); ctx.lineTo(160, 299);
+      ctx.lineTo(178, 309); ctx.lineTo(183, 304); ctx.closePath(); ctx.fill();
+    }
+
+    function setPanelTypography(ctx, size = 7, weight = 'normal', align = 'left') {
+      ctx.font = `${weight} ${size}px monospace`;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'top';
+      // Canvas letter spacing is supported by modern browsers; assignment is harmless otherwise.
+      try { ctx.letterSpacing = '0px'; } catch (_) {}
+      try { ctx.fontKerning = 'none'; } catch (_) {}
+    }
+
+    function panel(ctx, x, y, w, h, label) {
+      ctx.fillStyle = '#000000'; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#24307a'; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      ctx.fillStyle = '#ffb000'; setPanelTypography(ctx, 7, 'bold', 'left');
+      ctx.fillText(label, x + 5, y + 4);
+    }
+
+    function renderSignalConsole(ctx,state){
+      setPanelTypography(ctx, 7, 'normal', 'left');
+      const t=state?.t||0,m=state?.monster||{},danger=clamp(1-((m.distance??24)/24),0,1),battery=clamp(state?.battery??0,0,100);
+      const perfect=!!m.inPerfectWindow, phase=t%18, fake=m.mode==='LURK'&&phase>=6&&phase<9;
+      const enemyType=m.variant||'STALKER', fakeVisible=Math.floor(t*7)%3!==0;
+      const sig=state?.signal||{tuned:50,target:50,lock:0,compared:false};
+      const quality=sig.lock>=.82&&perfect?'PERFECT':sig.lock>=.55?'TARGET':sig.lock>.12?'WEAK':'NONE';
+      ctx.fillStyle='#000';ctx.fillRect(0,0,WIDTH,HEIGHT);ctx.fillStyle='#24307a';for(let y=0;y<HEIGHT;y+=5)ctx.fillRect(0,y,WIDTH,1);
+      ctx.fillStyle='#000';ctx.fillRect(5,5,310,23);ctx.strokeStyle='#fff';ctx.strokeRect(5.5,5.5,309,22);
+      const score=String(Math.floor(state?.score||0)).padStart(7,'0');ctx.fillStyle='#ffb000';setPanelTypography(ctx,13,'bold','left');ctx.fillText(`SCORE ${score}`,11,8);
+      const p=clamp(t/90,0,1);ctx.strokeStyle='#24307a';ctx.strokeRect(184.5,9.5,116,12);ctx.fillStyle='#000';ctx.fillRect(187,12,111,7);ctx.fillStyle=p>.72?'#ffb000':'#fff';ctx.fillRect(187,12,111*p,7);
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(176,15,5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(179,13,5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffb000';ctx.beginPath();ctx.arc(308,15,4,0,Math.PI*2);ctx.fill();for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.fillRect(308+Math.cos(a)*7,15+Math.sin(a)*7,2,2)}
+      panel(ctx,5,32,191,211,'ROAD MONITOR');ctx.save();ctx.beginPath();ctx.rect(10,45,181,192);ctx.clip();ctx.fillStyle='#000';ctx.fillRect(10,45,181,192);
+      const scroll=(t*(state?.speed||1)*24)%30;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(42,237);ctx.bezierCurveTo(26,195,68,160,50,119);ctx.bezierCurveTo(39,91,76,68,70,45);ctx.stroke();ctx.beginPath();ctx.moveTo(158,237);ctx.bezierCurveTo(142,195,184,160,166,119);ctx.bezierCurveTo(155,91,192,68,186,45);ctx.stroke();ctx.lineWidth=1;ctx.strokeStyle='#24307a';ctx.setLineDash([8,9]);ctx.lineDashOffset=scroll;ctx.beginPath();ctx.moveTo(100,237);ctx.bezierCurveTo(84,195,126,160,108,119);ctx.bezierCurveTo(97,91,134,68,128,45);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#ffb000';ctx.fillRect(88,198,24,28);ctx.fillStyle='#fff';ctx.fillRect(92,202,16,8);ctx.fillRect(84,205,4,10);ctx.fillRect(112,205,4,10);
+      if(m.mode!=='LURK'||fake){const fd=fake?clamp((phase-6)/3,0,1):danger,n=fake?2:1+Math.floor(fd*3),lead=72+fd*104;for(let i=0;i<n;i++){const y=lead-i*15,x=104+Math.sin(t*(fake?8:5)+i*1.7)*(9+i*3),z=i===0?(fd>.65?6:4):2;ctx.fillStyle=fake?'#24307a':i===0&&fd>.55?'#ffb000':'#fff';ctx.fillRect(x-z/2,y,z,z)}ctx.fillStyle=fake?'#24307a':fd>.62?'#ffb000':'#fff';ctx.font='bold 6px monospace';ctx.fillText(fake?'UNVERIFIED':fd>.62?'CONTACT CLOSE':'CONTACT',14,58)}ctx.restore();
+      ctx.fillStyle='#fff';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText(fake?'CHECK REAR SENSOR':m.mode==='LURK'?'HOLD W  DRIVE + CHARGE':'CONTACT CLOSING',100,231);
+      panel(ctx,201,32,114,102,'REAR SENSOR');ctx.save();ctx.beginPath();ctx.rect(206,45,104,83);ctx.clip();ctx.fillStyle='#24307a';const noiseN=enemyType==='JAMMER'&&m.mode!=='LURK'?42:(danger>.68?34:13);for(let i=0;i<noiseN;i++){const x=207+((i*37+Math.floor(t*50)*11)%101),y=47+((i*19+Math.floor(t*35)*7)%77);ctx.fillRect(x,y,enemyType==='JAMMER'?6:(danger>.68?7:3),1)}
+      if(m.mode!=='LURK'){const x=258,y=83+Math.sin(t*(enemyType==='RUSHER'?16:9))*2,z=2+Math.round(danger*5);ctx.fillStyle=danger>.58?'#ffb000':'#fff';ctx.fillRect(x-10-z,y,z,z);ctx.fillRect(x+10,y,z,z)}
+      // False contacts now appear on both screens, but flicker and drift in the rear sensor.
+      if(fake&&fakeVisible){const fx=258+Math.sin(t*19)*15,fy=82+Math.cos(t*13)*8;ctx.fillStyle='#24307a';ctx.fillRect(fx-8,fy,4,4);ctx.fillRect(fx+6,fy,4,4);ctx.strokeStyle='#24307a';ctx.strokeRect(fx-15,fy-10,30,23)}
+      if(quality!=='NONE'){ctx.strokeStyle=quality==='PERFECT'?'#ffb000':'#fff';ctx.lineWidth=quality==='PERFECT'?2:1;ctx.strokeRect(218,57,80,60);ctx.lineWidth=1;ctx.fillStyle=quality==='PERFECT'?'#ffb000':'#fff';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText(`${quality} LOCK`,258,119)}ctx.restore();
+      panel(ctx,201,139,114,104,'SYSTEM STATUS');ctx.fillStyle=m.mode==='LURK'?'#24307a':'#ffb000';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText(m.mode==='LURK'?'SCANNING':enemyType,258,151);[['BEAM',battery/100,battery<25],['THREAT',danger,danger>.62],['TIME',1-p,false]].forEach((b,i)=>{const y=169+i*19;ctx.fillStyle='#fff';ctx.font='7px monospace';ctx.textAlign='left';ctx.fillText(b[0],207,y);ctx.strokeStyle='#24307a';ctx.strokeRect(246.5,y-.5,61,8);ctx.fillStyle=b[2]?'#ffb000':'#fff';ctx.fillRect(248,y+1,57*b[1],5)});
+      panel(ctx,5,248,310,67,'PULSE COMMAND');
+      const ready=sig.lock>=.55&&battery>=25;
+      ctx.fillStyle=state?.isFlashing?'#ffffff':quality==='PERFECT'?'#ffb000':'#24307a';
+      ctx.fillRect(105,259,110,27);
+      ctx.strokeStyle=quality==='PERFECT'?'#ffb000':'#ffffff';ctx.strokeRect(102.5,256.5,115,32);
+      ctx.fillStyle=state?.isFlashing?'#000000':'#ffffff';setPanelTypography(ctx,10,'bold','center');
+      ctx.fillText(state?.isFlashing?'PULSE FIRED':ready?'PRESS SPACE':'WAIT FOR LOCK',160,265);
+      // Controls occupy separate columns below the button.
+      setPanelTypography(ctx,6,'bold','left');ctx.fillStyle='#ffffff';ctx.fillText('W CHARGE | A/D TUNE',13,294);
+      setPanelTypography(ctx,6,'bold','right');ctx.fillText('SPACE  FIRE',307,294);
+      const tuneError=Math.abs(sig.tuned-sig.target);
+      const stage=!sig.compared?'1 RECEIVE / 2 COMPARE':tuneError>22?'3 TUNE: SEEK MATCH':sig.lock<.55?'3 HOLD FREQUENCY TO LOCK':'4 LOCKED: CHOOSE FIRE TIME';
+      const status=fake?'FALSE SIGNAL: FLICKER + DRIFT':stage;
+      ctx.fillStyle='#ffb000';setPanelTypography(ctx,6,'bold','center');ctx.fillText(status,160,305);
+      if(t<7){ctx.fillStyle='#000';ctx.fillRect(38,94,244,62);ctx.strokeStyle='#ffb000';ctx.strokeRect(38.5,94.5,243,61);ctx.fillStyle='#ffb000';ctx.font='bold 9px monospace';ctx.fillText('HOW TO PLAY',160,103);ctx.fillStyle='#fff';ctx.font='7px monospace';ctx.fillText('1  HOLD W; RECEIVE + COMPARE',160,120);ctx.fillText('2  A / D: TUNE; NEAR TARGET AUTO-SNAPS',160,134);ctx.fillText('3  55% LOCK: FIRE; 82%: PERFECT',160,147)}
+      // Receiver dial makes the tune-and-lock loop readable at a glance.
+      ctx.fillStyle='#000';ctx.fillRect(204,124,106,35);ctx.strokeStyle='#fff';ctx.strokeRect(204.5,124.5,105,34);
+      setPanelTypography(ctx,6,'bold','left');ctx.fillStyle='#fff';ctx.fillText(`FREQ ${Math.round(sig.tuned).toString().padStart(3,'0')}`,209,129);
+      ctx.strokeStyle='#24307a';ctx.strokeRect(209.5,142.5,95,7);ctx.fillStyle='#fff';ctx.fillRect(211+91*(sig.tuned/100),141,3,11);
+      if(sig.compared){ctx.fillStyle='#ffb000';ctx.fillRect(211+91*(sig.target/100),143,2,6);}
+      ctx.fillStyle='#24307a';ctx.fillRect(209,153,95,3);ctx.fillStyle=sig.lock>=.55?'#ffb000':'#fff';ctx.fillRect(209,153,95*sig.lock,3);
+      if (scorePopupTimer > 0 && scorePopupAmount > 0) {
+        setPanelTypography(ctx, 10, 'bold', 'left');
+        ctx.fillStyle = '#ffb000';
+        ctx.fillText(`+${scorePopupAmount}`, 12, 28);
+      }
+    }
+
+    function renderTopHUD(ctx, state) {
+      const scoreStr = String(Math.floor(state?.score || 0)).padStart(6, '0');
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(scoreStr, 12, 10);
+
+      if (state?.combo && state.combo > 1) {
+        ctx.fillStyle = '#ffb000';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`x${state.combo}`, 12, 26);
+      }
+
+      // Timeline (Moon -> Sun)
+      const t = Math.min(90, Math.max(0, state?.t || 0));
+      const p = t / 90;
+      const startX = 115;
+      const endX = 205;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('MOON', startX - 14, 11);
+      ctx.fillStyle = '#ffb000';
+      ctx.fillText('SUN', endX + 14, 11);
+
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(startX, 15, endX - startX, 2);
+
+      const dotX = Math.round(startX + p * (endX - startX));
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(dotX - 2, 13, 5, 5);
+
+      const hi = state?.hi || 50000;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`HI ${hi}`, 308, 10);
+    }
+
+    function renderHUD(ctx, state) {
+      renderTopHUD(ctx, state);
+      renderDashboard(ctx, state);
+    }
+
+    function renderAttractScreen(ctx, state) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.strokeStyle = '#24307a';
+      ctx.strokeRect(8, 8, WIDTH - 16, HEIGHT - 16);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('DEAD SIGNAL', 160, 45);
+
+      ctx.fillStyle = '#ffb000';
+      ctx.font = '10px monospace';
+      ctx.fillText('1976 HEADLIGHT SURVIVAL', 160, 75);
+
+      ctx.strokeStyle = '#24307a';
+      ctx.beginPath();
+      ctx.moveTo(160, 105);
+      ctx.lineTo(90, 160);
+      ctx.lineTo(230, 160);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(152, 125, 3, 3);
+      ctx.fillRect(164, 125, 3, 3);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '10px monospace';
+      ctx.fillText('[ALIGN SENSOR]   < / >   AIM BEAM', 160, 175);
+      ctx.fillText('[ACCEL]   ^ / v   SPEED & CHARGE', 160, 192);
+      ctx.fillText('[ACTION]  SPACE   FIRE PULSE HEADLIGHT', 160, 209);
+
+      ctx.fillStyle = '#24307a';
+      ctx.fillText('BLIND THE BEAST. SURVIVE TILL DAWN.', 160, 235);
+
+      // Three-line mission briefing: teach the complete loop before play.
+      ctx.fillStyle = '#000000'; ctx.fillRect(35, 103, 250, 110);
+      ctx.strokeStyle = '#24307a'; ctx.strokeRect(35.5, 103.5, 249, 109);
+      ctx.fillStyle = '#ffb000'; ctx.font = 'bold 9px monospace';
+      ctx.fillText('MISSION: SURVIVE 90 SECONDS', 160, 112);
+      ctx.fillStyle = '#ffffff'; ctx.font = '8px monospace';
+      ctx.fillText('1  HOLD W TO DRIVE + CHARGE', 160, 137);
+      ctx.fillText('2  TRUE SIGNAL STAYS STEADY', 160, 158);
+      ctx.fillText('3  BETTER LOCK = MORE SCORE', 160, 179);
+      ctx.fillStyle = '#24307a';
+      ctx.fillText('FLICKER + DRIFT = FALSE SIGNAL', 160, 198);
+
+      const blink = (Math.floor(Date.now() / 450) % 2 === 0);
+      if (blink) {
+        ctx.fillStyle = '#ffb000';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('INSERT COIN / PRESS SPACE', 160, 268);
+      }
+
+      const hi = state?.hi || 50000;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '10px monospace';
+      ctx.fillText(`HI SCORE ${hi}`, 160, 292);
+    }
+
+    function renderWinScreen(ctx, state) {
+      ctx.fillStyle = '#24307a';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      for (let y = 140; y < HEIGHT; y += 2) {
+        ctx.fillStyle = '#ffb000';
+        ctx.fillRect(0, y, WIDTH, 1);
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 22px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('DAWN HAS COME', 160, 60);
+
+      ctx.fillStyle = '#ffb000';
+      ctx.font = '12px monospace';
+      ctx.fillText('YOU SURVIVED THE NIGHT', 160, 95);
+
+      const score = state?.score || 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`FINAL SCORE: ${score}`, 160, 140);
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(30, 175, WIDTH - 60, 32);
+      ctx.fillStyle = '#ffb000';
+      ctx.font = '10px monospace';
+      ctx.fillText('SURVIVAL BONUS: +5000', 160, 185);
+
+      const blink = (Math.floor(Date.now() / 450) % 2 === 0);
+      if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('PRESS SPACE TO RESTART', 160, 250);
+      }
+    }
+
+    function renderLoseScreen(ctx, state) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(145, 70, 6, 6);
+      ctx.fillRect(169, 70, 6, 6);
+
+      ctx.fillStyle = '#ffb000';
+      ctx.font = 'bold 22px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('GAME OVER', 160, 110);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '11px monospace';
+      ctx.fillText('CONSUMED BY THE DARKNESS', 160, 145);
+
+      const score = state?.score || 0;
+      const t = Math.floor(state?.t || 0);
+      ctx.fillStyle = '#ffb000';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`SCORE: ${score}`, 160, 185);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '10px monospace';
+      ctx.fillText(`SURVIVED: ${t} SECONDS`, 160, 208);
+
+      const blink = (Math.floor(Date.now() / 450) % 2 === 0);
+      if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('PRESS SPACE TO TRY AGAIN', 160, 260);
+      }
+    }
+
+    function render(ctx, state) {
+      if (!ctx) return;
+      const mode = state?.mode || 'ATTRACT';
+
+      switch (mode) {
+        case 'ATTRACT':
+          renderAttractScreen(ctx, state);
+          break;
+        case 'WIN':
+          renderWinScreen(ctx, state);
+          break;
+        case 'LOSE':
+          renderLoseScreen(ctx, state);
+          break;
+        case 'PLAY':
+        case 'RESTART':
+        default:
+          renderSignalConsole(ctx, state);
+          break;
+      }
+
+      // Full-frame pixel readback is expensive on many browsers. The renderer
+      // already emits palette colors exclusively; strict post-quantization is opt-in.
+      if (false && STRICT_PALETTE) enforcePalette(ctx);
+    }
+
+    const Renderer = {
+      WIDTH,
+      HEIGHT,
+      HORIZON_Y,
+      DASHBOARD_Y,
+      PALETTE,
+      PALETTE_RGB,
+      quantizeRgb,
+      enforcePalette,
+      project,
+      isLit,
+      renderSky,
+      renderHeadlights,
+      renderRoad,
+      renderMonster,
+      renderCockpitFrame,
+      renderDashboard,
+      renderHUD,
+      render
+    };
+
+    // Expose modules on window for inspection / testing
+    if (typeof window !== 'undefined') {
+      window.Logic = Logic;
+      window.SoundSystem = SoundSystem;
+      window.Renderer = Renderer;
+    }
+
+    // ---------------------------------------------------------------------
+    // MODULE 4: Main Controller Loop & Input Handling
+    // ---------------------------------------------------------------------
+    const STORAGE_KEY = 'dead_signal_1976_hi';
+    let highScore = 50000;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved !== null && !isNaN(Number(saved))) {
+        highScore = parseInt(saved, 10);
+      }
+    } catch (_) {}
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.setTransform(2,0,0,2,0,0);
+    ctx.imageSmoothingEnabled=false;
+    const sound = new SoundSystem();
+
+    let state = Logic.createState(Date.now());
+    state.mode = 'ATTRACT';
+    state.hi = highScore;
+
+    let flashVisualTimer = 0;
+    // Score popup state must exist before the first render. Missing declarations in v15
+    // caused a ReferenceError inside renderSignalConsole and froze the frame.
+    let scorePopupTimer = 0;
+    let scorePopupAmount = 0;
+    let lastTime = 0;
+    let hasCheckedPalette = false;
+    let highScoreDirty = false;
+    let accumulator = 0;
+    const FIXED_STEP = 1 / 60;
+    const MAX_STEPS = 5;
+
+    // Edge-triggered keypress state
+    const keys = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      pressEdge: false,
+      pressHeld: false
+    };
+
+
+    function saveHighScore() {
+      if (!highScoreDirty) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, String(highScore));
+        highScoreDirty = false;
+      } catch (_) {}
+    }
+
+    function clearHeldKeys() {
+      keys.up = keys.down = keys.left = keys.right = false;
+      keys.pressEdge = keys.pressHeld = false;
+    }
+
+    function startOrRestart() {
+      sound.init();
+      sound.resume();
+      sound.playMelody('coin');
+      state = Logic.createState(Date.now());
+      state.mode = 'PLAY';
+      state.hi = highScore;
+      clearHeldKeys();
+      flashVisualTimer = 0;
+      scorePopupTimer = 0;
+      scorePopupAmount = 0;
+      accumulator = 0;
+      lastTime = 0;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+
+      // Single edge-triggered press for Space or J:
+      // Holding key does NOT repeat or drain 25 battery every frame!
+      if (e.code === 'Space' || e.code === 'KeyJ' || e.code === 'Enter') {
+        if (!keys.pressHeld) {
+          keys.pressEdge = true;
+          keys.pressHeld = true;
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+
+      if (e.code === 'Space' || e.code === 'KeyJ' || e.code === 'Enter') {
+        keys.pressHeld = false;
+      }
+    });
+
+    window.addEventListener('blur', clearHeldKeys);
+    document.addEventListener('visibilitychange', () => {
+      clearHeldKeys();
+      lastTime = 0;
+      if (document.hidden) saveHighScore();
+      if (sound.ctx && document.hidden) { try { sound.ctx.suspend(); } catch (_) {} }
+    });
+    window.addEventListener('pagehide', saveHighScore);
+
+    const arcadeBezel = document.getElementById('arcade');
+    arcadeBezel.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      arcadeBezel.setPointerCapture?.(event.pointerId);
+      if (state.mode === 'ATTRACT' || state.mode === 'WIN' || state.mode === 'LOSE') {
+        startOrRestart();
+      } else if (state.mode === 'PLAY') {
+        // Pointer click during game acts as edge-triggered flash
+        keys.pressEdge = true;
+      }
+    });
+
+    function loop(now) {
+      if (!lastTime) lastTime = now;
+      let dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      if (dt > 0.1) dt = 0.1;
+      if (dt <= 0) dt = 1 / 60;
+
+      // Extract single-frame edge-triggered press
+      const pressThisFrame = keys.pressEdge;
+      keys.pressEdge = false; // Immediately consumed!
+
+      const input = {
+        up: keys.up,
+        down: keys.down,
+        left: keys.left,
+        right: keys.right,
+        press: pressThisFrame
+      };
+
+      if (state.mode === 'ATTRACT' || state.mode === 'WIN' || state.mode === 'LOSE') {
+        if (input.press) {
+          startOrRestart();
+        }
+        sound.updateEngine(0, false);
+      } else if (state.mode === 'PLAY') {
+        if (scorePopupTimer > 0) {
+          scorePopupTimer = Math.max(0, scorePopupTimer - dt);
+          if (scorePopupTimer === 0) scorePopupAmount = 0;
+        }
+        if (flashVisualTimer > 0) {
+          flashVisualTimer -= dt;
+          state.isFlashing = true;
+        } else {
+          state.isFlashing = false;
+        }
+
+        accumulator = Math.min(accumulator + dt, FIXED_STEP * MAX_STEPS);
+        if (input.press && accumulator < FIXED_STEP) accumulator = FIXED_STEP;
+        const events = [];
+        let steps = 0;
+        while (accumulator >= FIXED_STEP && steps < MAX_STEPS) {
+          // Edge-triggered action is consumed by the first simulation step only.
+          const stepInput = steps === 0 ? input : { ...input, press: false };
+          events.push(...Logic.step(state, stepInput, FIXED_STEP));
+          accumulator -= FIXED_STEP;
+          steps += 1;
+          if (state.mode !== 'PLAY') break;
+        }
+
+        if (events.some(ev => ev.type === 'perfect' || ev.type === 'early' || ev.type === 'miss')) {
+          flashVisualTimer = 0.12;
+          state.isFlashing = true;
+        }
+
+        sound.handleEvents(events);
+        const scoredEvent = events.find(ev => ev.type === 'perfect' || ev.type === 'early');
+        if (scoredEvent) {
+          scorePopupAmount = scoredEvent.score || 0;
+          scorePopupTimer = 0.9;
+        }
+        sound.updateEngine(state.speed, true);
+        sound.updateHeartbeat(state.monster.distance, state.monster.mode === 'STALK' || state.monster.mode === 'LUNGE');
+
+        if (state.score > highScore) {
+          highScore = state.score;
+          state.hi = highScore;
+          highScoreDirty = true;
+        }
+        if (events.some(ev => ev.type === 'win' || ev.type === 'lose')) saveHighScore();
+      }
+
+      Renderer.render(ctx, state);
+
+      if (!hasCheckedPalette && typeof window !== 'undefined' && window.location && window.location.search && window.location.search.includes('check')) {
+        hasCheckedPalette = true;
+        try {
+          const img = ctx.getImageData(0, 0, Renderer.WIDTH, Renderer.HEIGHT);
+          const data = img.data;
+          let allConform = true;
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const isC0 = (r === 0 && g === 0 && b === 0);
+            const isC1 = (r === 36 && g === 48 && b === 122);
+            const isC2 = (r === 255 && g === 176 && b === 0);
+            const isC3 = (r === 255 && g === 255 && b === 255);
+            if (!isC0 && !isC1 && !isC2 && !isC3) {
+              allConform = false;
+              break;
+            }
+          }
+          if (allConform) {
+            console.log('[4-COLOR CHECK] All pixels conform to 4-color palette');
+          }
+        } catch (_) {}
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
