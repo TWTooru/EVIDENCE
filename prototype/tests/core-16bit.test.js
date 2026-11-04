@@ -150,3 +150,61 @@ test('night 2 introduces ROOF direction and night 3 spawns 2 threats with reduce
   assert.equal(s.cockpit.battery, 75);
   assert.equal(s.creatures.length, 2);
 });
+
+test('Bug A1: pressing shoot without holding aim still raises camera and fires flash', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 77);
+  C.startNight(s, 1);
+  const c = s.creatures[0];
+  c.dir = 'FRONT';
+  c.dist = 0.24;
+  s.cockpit.panX = 160;
+  s.cockpit.vfActive = false;
+
+  C.step(s, { aim: false, shoot: true }, 0.01);
+  assert.equal(s.cockpit.vfActive, true);
+  assert.equal(s.camera.filmLeft, 3);
+  assert.equal(s.camera.lastPhoto.grade, 'EVIDENCE');
+});
+
+test('Bug A2: looking up at ROOF puts ground windows (FRONT/LEFT/RIGHT) into blindspot', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 88);
+  C.startNight(s, 2);
+  const c = s.creatures[0];
+  c.dir = 'FRONT';
+  c.dist = 0.6;
+  s.cockpit.panX = 160;
+
+  s.cockpit.lookUp = false;
+  assert.equal(C.isCreatureGazed(c, s), true);
+
+  s.cockpit.lookUp = true;
+  assert.equal(C.isCreatureGazed(c, s), false);
+});
+
+test('Bug A3: no single panX position can simultaneously gaze-freeze two ground windows', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 99);
+  C.startNight(s, 1);
+  const leftC = { id: 1, dir: 'LEFT', dist: 0.5, offsetX: 0 };
+  const frontC = { id: 2, dir: 'FRONT', dist: 0.5, offsetX: 0 };
+  const rightC = { id: 3, dir: 'RIGHT', dist: 0.5, offsetX: 0 };
+
+  for (let pan = 0; pan <= C.MAX_PAN_X; pan += 1) {
+    s.cockpit.panX = pan;
+    const gazedCount = [leftC, frontC, rightC].filter((c) => C.isCreatureGazed(c, s)).length;
+    assert.ok(gazedCount <= 1, `panX=${pan} froze ${gazedCount} windows simultaneously`);
+  }
+});
+
+test('Bug A4: heavy rainBlur (> threshold) blocks FRONT gaze even when headlights are ON', () => {
+  const s = C.createGame(C.makeConfig(), 105);
+  C.startNight(s, 1);
+  const c = s.creatures[0];
+  c.dir = 'FRONT';
+  c.dist = 0.5;
+  s.cockpit.panX = 160;
+  s.cockpit.headlightsOn = true;
+  s.cockpit.rainBlur = 0.8; // Exceeds 0.65 blurThreshold
+
+  assert.equal(C.isCreatureGazed(c, s), false);
+});
+

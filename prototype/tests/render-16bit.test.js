@@ -77,3 +77,21 @@ test('PAL defines a rich 16-bit era color palette and draw renders all game phas
   s.phase = 'VICTORY';
   R.draw(ctx, s);
 });
+
+test('HiDPI integer scaling: draw applies crisp 4x transform and disables smoothing on 1280x960 canvas', () => {
+  const ctx = createMockCtx();
+  ctx.canvas = { width: 1280, height: 960 };
+  let transformArgs = null;
+  ctx.setTransform = (...args) => { transformArgs = args; };
+  ctx.imageSmoothingEnabled = true;
+
+  const s = C.createGame(C.makeConfig(), 12);
+  C.startNight(s, 1);
+  s.cockpit.rainBlur = 0.75; // Triggers WIPER NEEDED warning & crisp raindrop pattern
+  R.draw(ctx, s);
+
+  assert.deepEqual(transformArgs, [4, 0, 0, 4, 0, 0]);
+  assert.equal(ctx.imageSmoothingEnabled, false);
+  assert.ok(ctx.calls.some((c) => c.op === 'fillText' && c.str.includes('WIPER')));
+});
+

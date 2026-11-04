@@ -85,7 +85,7 @@
     <span>EVIDENCE 1989: BLACK RAIN</span>
   </div>
 
-  <canvas id="screen" width="320" height="240"></canvas>
+  <canvas id="screen" width="1280" height="960"></canvas>
 
   <div class="quick-deck">
     <button class="deck-btn" id="btnWipers">[1] 雨刷 WIPERS</button>
@@ -262,19 +262,21 @@
       return Boolean(centered && cockpit.lookUp);
     }
 
+    // Looking up at the roof skylight puts ground windows into a blindspot
+    if (cockpit.lookUp) return false;
+
     if (c.dir === 'FRONT') {
-      // Blocked if rain blur exceeds threshold and headlights are not cutting through
-      if (cockpit.rainBlur > cfg.blurThreshold && !cockpit.headlightsOn) {
+      // Blocked if rain blur exceeds threshold (wipers required to clear front glass)
+      if (cockpit.rainBlur > cfg.blurThreshold) {
         return false;
       }
     }
 
     const rect = creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
-    // Eye point must fall comfortably inside the 320px viewport margins
-    const inHorizView = rect.eyeX >= 28 && rect.eyeX <= SCREEN_W - 28;
+    // Eye point must fall inside the focused 176px center gaze cone (cannot freeze 2 windows at once)
+    const inHorizView = rect.eyeX >= 72 && rect.eyeX <= SCREEN_W - 72;
     if (!inHorizView) return false;
 
-    // If headlights are on and creature is in FRONT, it can be frozen even at long range
     return true;
   }
 
@@ -639,7 +641,8 @@
       camera.photoPopupTimer = Math.max(0, camera.photoPopupTimer - dt);
     }
 
-    if (inp.shoot && cockpit.vfActive) {
+    if (inp.shoot) {
+      cockpit.vfActive = true;
       handleShutter(state);
     }
 
@@ -917,7 +920,7 @@
 
     // Creatures behind midground trees or stepping out
     for (const c of state.creatures) {
-      drawCreature16Bit(ctx, c, state);
+      if (c.dir !== 'ROOF') drawCreature16Bit(ctx, c, state);
     }
 
     // Midground trees (Parallax 0.85)
@@ -941,12 +944,21 @@
     const clampedLeft = clamp(frontLeft, 0, W);
     const clampedRight = clamp(frontRight, 0, W);
 
-    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.05) {
-      ctx.save();
-      ctx.globalAlpha = clamp(cockpit.rainBlur * 0.78, 0, 0.82);
+    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.2) {
+      // Crisp 16-bit raindrop & condensation stipple lines instead of muddy full-window smear
+      const density = Math.floor((cockpit.rainBlur - 0.15) * 28);
       ctx.fillStyle = PAL.glassTint;
-      ctx.fillRect(clampedLeft, 18, clampedRight - clampedLeft, 152);
-      ctx.restore();
+      for (let r = 0; r < density; r++) {
+        const bandY = 26 + ((r * 19) % 132);
+        const bandX = clampedLeft + ((r * 43) % Math.max(1, clampedRight - clampedLeft - 18));
+        ctx.fillRect(bandX, bandY, 16, 2);
+      }
+      if (cockpit.rainBlur > state.cfg.blurThreshold) {
+        ctx.fillStyle = 'rgba(26, 44, 61, 0.38)';
+        ctx.fillRect(clampedLeft, 22, clampedRight - clampedLeft, 140);
+        const warnX = Math.round((clampedLeft + clampedRight) / 2);
+        text(ctx, 'WINDSHIELD BLURRED - PRESS [1] WIPERS!', warnX, 34, PAL.dangerRed, 8, 'center');
+      }
     }
 
     // Rain streaks across all visible glass
@@ -1269,6 +1281,12 @@
 
   function draw(ctx, state) {
     if (!ctx || !state) return;
+    if (ctx.canvas && ctx.canvas.width && typeof ctx.setTransform === 'function') {
+      const scaleX = ctx.canvas.width / W;
+      const scaleY = (ctx.canvas.height || W) / H;
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    }
     if (drawOverlayScreens(ctx, state)) return;
 
     drawExteriorLayers(ctx, state);
@@ -1465,6 +1483,12 @@
       const ctx = canvas.getContext('2d');
       const params = Object.fromEntries(new URLSearchParams(location.search));
       const state = C.createGame(C.makeConfig(params), Date.now());
+      if (params.autostart === '1') {
+        C.startNight(state, Number(params.night) || 1);
+        state.creatures[0].dir = 'FRONT';
+        state.creatures[0].dist = 0.35;
+        state.cockpit.vfActive = true;
+      }
 
       const keys = {};
       let pendingWipers = false;
@@ -1497,6 +1521,7 @@
           pendingAction = true;
           if (state.phase === 'PLAYING') {
             state.cockpit.vfActive = true;
+            mouseAimToggle = true;
             pendingShoot = true;
           }
         }

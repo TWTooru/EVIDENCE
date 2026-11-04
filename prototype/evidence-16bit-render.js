@@ -173,7 +173,7 @@
 
     // Creatures behind midground trees or stepping out
     for (const c of state.creatures) {
-      drawCreature16Bit(ctx, c, state);
+      if (c.dir !== 'ROOF') drawCreature16Bit(ctx, c, state);
     }
 
     // Midground trees (Parallax 0.85)
@@ -197,12 +197,21 @@
     const clampedLeft = clamp(frontLeft, 0, W);
     const clampedRight = clamp(frontRight, 0, W);
 
-    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.05) {
-      ctx.save();
-      ctx.globalAlpha = clamp(cockpit.rainBlur * 0.78, 0, 0.82);
+    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.2) {
+      // Crisp 16-bit raindrop & condensation stipple lines instead of muddy full-window smear
+      const density = Math.floor((cockpit.rainBlur - 0.15) * 28);
       ctx.fillStyle = PAL.glassTint;
-      ctx.fillRect(clampedLeft, 18, clampedRight - clampedLeft, 152);
-      ctx.restore();
+      for (let r = 0; r < density; r++) {
+        const bandY = 26 + ((r * 19) % 132);
+        const bandX = clampedLeft + ((r * 43) % Math.max(1, clampedRight - clampedLeft - 18));
+        ctx.fillRect(bandX, bandY, 16, 2);
+      }
+      if (cockpit.rainBlur > state.cfg.blurThreshold) {
+        ctx.fillStyle = 'rgba(26, 44, 61, 0.38)';
+        ctx.fillRect(clampedLeft, 22, clampedRight - clampedLeft, 140);
+        const warnX = Math.round((clampedLeft + clampedRight) / 2);
+        text(ctx, 'WINDSHIELD BLURRED - PRESS [1] WIPERS!', warnX, 34, PAL.dangerRed, 8, 'center');
+      }
     }
 
     // Rain streaks across all visible glass
@@ -525,6 +534,12 @@
 
   function draw(ctx, state) {
     if (!ctx || !state) return;
+    if (ctx.canvas && ctx.canvas.width && typeof ctx.setTransform === 'function') {
+      const scaleX = ctx.canvas.width / W;
+      const scaleY = (ctx.canvas.height || W) / H;
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    }
     if (drawOverlayScreens(ctx, state)) return;
 
     drawExteriorLayers(ctx, state);

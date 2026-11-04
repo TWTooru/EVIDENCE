@@ -85,7 +85,7 @@
     <span>EVIDENCE 1989: BLACK RAIN</span>
   </div>
 
-  <canvas id="screen" width="320" height="240"></canvas>
+  <canvas id="screen" width="1280" height="960"></canvas>
 
   <div class="quick-deck">
     <button class="deck-btn" id="btnWipers">[1] 雨刷 WIPERS</button>
@@ -113,6 +113,12 @@
       const ctx = canvas.getContext('2d');
       const params = Object.fromEntries(new URLSearchParams(location.search));
       const state = C.createGame(C.makeConfig(params), Date.now());
+      if (params.autostart === '1') {
+        C.startNight(state, Number(params.night) || 1);
+        state.creatures[0].dir = 'FRONT';
+        state.creatures[0].dist = 0.35;
+        state.cockpit.vfActive = true;
+      }
 
       const keys = {};
       let pendingWipers = false;
@@ -145,6 +151,7 @@
           pendingAction = true;
           if (state.phase === 'PLAYING') {
             state.cockpit.vfActive = true;
+            mouseAimToggle = true;
             pendingShoot = true;
           }
         }

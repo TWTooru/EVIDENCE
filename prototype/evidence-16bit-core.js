@@ -159,19 +159,21 @@
       return Boolean(centered && cockpit.lookUp);
     }
 
+    // Looking up at the roof skylight puts ground windows into a blindspot
+    if (cockpit.lookUp) return false;
+
     if (c.dir === 'FRONT') {
-      // Blocked if rain blur exceeds threshold and headlights are not cutting through
-      if (cockpit.rainBlur > cfg.blurThreshold && !cockpit.headlightsOn) {
+      // Blocked if rain blur exceeds threshold (wipers required to clear front glass)
+      if (cockpit.rainBlur > cfg.blurThreshold) {
         return false;
       }
     }
 
     const rect = creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
-    // Eye point must fall comfortably inside the 320px viewport margins
-    const inHorizView = rect.eyeX >= 28 && rect.eyeX <= SCREEN_W - 28;
+    // Eye point must fall inside the focused 176px center gaze cone (cannot freeze 2 windows at once)
+    const inHorizView = rect.eyeX >= 72 && rect.eyeX <= SCREEN_W - 72;
     if (!inHorizView) return false;
 
-    // If headlights are on and creature is in FRONT, it can be frozen even at long range
     return true;
   }
 
@@ -536,7 +538,8 @@
       camera.photoPopupTimer = Math.max(0, camera.photoPopupTimer - dt);
     }
 
-    if (inp.shoot && cockpit.vfActive) {
+    if (inp.shoot) {
+      cockpit.vfActive = true;
       handleShutter(state);
     }
 
