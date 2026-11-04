@@ -232,6 +232,9 @@
       dir,
       dist: Number((0.78 + rng() * 0.18).toFixed(3)),
       offsetX,
+      lateralDir: rng() < 0.5 ? -1 : 1,
+      shiftTimer: 4.5 + rng() * 3.5,
+      gazeTimer: 0,
       state: 'STALKING',
       glintTimer: 0.8 + rng() * 0.8,
       soundCooldown: 1.2 + rng() * 1.5,
@@ -315,6 +318,8 @@
     state.cockpit.blackout = false;
     state.cockpit.lightningTimer = 3.0 + state.rng() * 4.0;
     state.cockpit.lightningFlash = 0;
+    state.cockpit.heartbeatTimer = 0.45;
+    state.cockpit.rainAmbienceTimer = 0.25;
 
     state.camera.filmLeft = state.cfg.film;
     state.camera.chargeTimer = 0;
@@ -331,7 +336,8 @@
       const otherDirs = ns.dirs.filter((d) => d !== d0);
       const d1 = otherDirs[Math.floor(state.rng() * otherDirs.length)] || 'LEFT';
       const second = spawnCreature(2, ns, state.rng, d1);
-      second.dist = 0.92;
+      second.dist = 0.88;
+      second.feint = true;
       state.creatures.push(second);
     }
 
@@ -552,6 +558,7 @@
 
     // 7. Creature AI & Radio Radar calculation
     let closestCreature = null;
+    let closestRealCreature = null;
     for (const c of state.creatures) {
       const gazed = isCreatureGazed(c, state);
 
@@ -567,11 +574,57 @@
 
       if (gazed) {
         c.state = 'FROZEN';
+        if (c.feint) {
+          c.gazeTimer = (c.gazeTimer || 0) + dt;
+          if (c.gazeTimer >= 0.55) {
+            c.gazeTimer = 0;
+            const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
+            state.events.push({ type: 'FEINT_VANISH', pan });
+            relocateCreature(c, state);
+          }
+        }
       } else {
         c.state = 'STALKING';
+        c.gazeTimer = 0;
+
+        // B1: Lateral movement between trees when unwatched
+        if (c.dir !== 'ROOF') {
+          const latDir = c.lateralDir || 1;
+          c.offsetX = (c.offsetX || 0) + latDir * 24 * dt;
+          if (c.offsetX > 44) {
+            c.offsetX = 44;
+            c.lateralDir = -1;
+          } else if (c.offsetX < -44) {
+            c.offsetX = -44;
+            c.lateralDir = 1;
+          }
+        }
+
+        // B1: Window shifting when unwatched at medium-to-far range
+        c.shiftTimer = (c.shiftTimer !== undefined ? c.shiftTimer : 5.0) - dt;
+        if (c.shiftTimer <= 0 && c.dist > 0.38) {
+          const candidates = ns.dirs.filter((d) => d !== c.dir);
+          if (candidates.length > 0) {
+            c.dir = candidates[Math.floor(state.rng() * candidates.length)];
+            c.offsetX = c.dir === 'ROOF' ? 0 : Math.round((state.rng() - 0.5) * 32);
+            const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
+            state.events.push({ type: 'BRANCH_SNAP', pan, near: 1 - c.dist });
+          }
+          c.shiftTimer = 4.5 + state.rng() * 3.5;
+        }
+
         const flankBoost = (cockpit.headlightsOn && (c.dir === 'LEFT' || c.dir === 'RIGHT')) ? 1.25 : 1.0;
-        const stepDist = cfg.approachSpeed * ns.approachMult * flankBoost * dt;
+        const feintBoost = c.feint ? 1.25 : 1.0;
+        const stepDist = cfg.approachSpeed * ns.approachMult * flankBoost * feintBoost * dt;
         c.dist = Math.max(0, c.dist - stepDist);
+
+        // B2: Feint decoy vanishes in static at close range instead of breaching
+        if (c.feint && c.dist <= 0.18) {
+          const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
+          state.events.push({ type: 'FEINT_VANISH', pan });
+          relocateCreature(c, state);
+          continue;
+        }
 
         c.soundCooldown -= dt;
         if (c.soundCooldown <= 0) {
@@ -590,14 +643,33 @@
       if (!closestCreature || c.dist < closestCreature.dist) {
         closestCreature = c;
       }
+      if (!c.feint && (!closestRealCreature || c.dist < closestRealCreature.dist)) {
+        closestRealCreature = c;
+      }
 
-      // Check window breach
-      if (c.dist <= 0) {
+      // Check window breach (only real creatures can breach)
+      if (!c.feint && c.dist <= 0) {
         state.phase = 'GAME_OVER';
         state.endReason = 'BREACH';
         state.breachDir = c.dir;
         state.events.push({ type: 'GLASS_SHATTER', dir: c.dir });
         return state;
+      }
+    }
+
+    // B3: Continuous rain ambience & accelerating heartbeat based on closest real threat
+    cockpit.rainAmbienceTimer = (cockpit.rainAmbienceTimer !== undefined ? cockpit.rainAmbienceTimer : 0.25) - dt;
+    if (cockpit.rainAmbienceTimer <= 0) {
+      cockpit.rainAmbienceTimer = 0.45;
+      state.events.push({ type: 'RAIN_AMBIENCE', intensity: ns.rainMult });
+    }
+
+    const threat = closestRealCreature || closestCreature;
+    if (threat && threat.dist < 0.85) {
+      cockpit.heartbeatTimer = (cockpit.heartbeatTimer !== undefined ? cockpit.heartbeatTimer : 0.45) - dt;
+      if (cockpit.heartbeatTimer <= 0) {
+        cockpit.heartbeatTimer = Math.max(0.32, 0.22 + threat.dist * 0.85);
+        state.events.push({ type: 'HEARTBEAT', near: Number((1 - threat.dist).toFixed(2)) });
       }
     }
 

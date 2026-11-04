@@ -10,6 +10,10 @@ test('audio module exports all stereo sound methods and handles headless executi
   assert.equal(typeof A.roofThud, 'function');
   assert.equal(typeof A.shutterBlast, 'function');
   assert.equal(typeof A.updateRadio, 'function');
+  assert.equal(typeof A.heartbeat, 'function');
+  assert.equal(typeof A.rainAmbience, 'function');
+  assert.equal(typeof A.branchSnapStereo, 'function');
+  assert.equal(typeof A.feintVanish, 'function');
 
   // Should not throw when AudioContext is absent in Node
   A.init();
@@ -22,6 +26,10 @@ test('audio module exports all stereo sound methods and handles headless executi
   A.playEvent({ type: 'MONSTER_SCREAM', dir: 'LEFT' });
   A.playEvent({ type: 'GLASS_SHATTER' });
   A.playEvent({ type: 'DAWN_CHIME' });
+  A.playEvent({ type: 'HEARTBEAT', near: 0.8 });
+  A.playEvent({ type: 'RAIN_AMBIENCE', intensity: 1.2 });
+  A.playEvent({ type: 'BRANCH_SNAP', pan: -0.7, near: 0.4 });
+  A.playEvent({ type: 'FEINT_VANISH', pan: 0.7 });
   A.updateRadio(-0.5, 0.7, false);
 });
 

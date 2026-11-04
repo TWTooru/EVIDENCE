@@ -208,3 +208,64 @@ test('Bug A4: heavy rainBlur (> threshold) blocks FRONT gaze even when headlight
   assert.equal(C.isCreatureGazed(c, s), false);
 });
 
+test('B1: unwatched creature moves laterally between trees and shifts window when shiftTimer expires', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 201);
+  C.startNight(s, 1);
+  const c = s.creatures[0];
+  c.dir = 'LEFT';
+  c.dist = 0.75;
+  c.offsetX = 0;
+  c.shiftTimer = 1.0;
+  s.cockpit.panX = 320; // Looking far right, so LEFT is unwatched
+
+  C.step(s, {}, 0.4);
+  assert.notEqual(c.offsetX, 0, 'unwatched creature should move laterally');
+
+  // Step past shiftTimer (0.7s more) while still unwatched at medium-far range
+  C.step(s, {}, 0.7);
+  assert.notEqual(c.dir, 'LEFT', 'creature should shift to a new window direction');
+  assert.ok(s.events.some((e) => e.type === 'BRANCH_SNAP'));
+});
+
+test('B2: Night 3 spawns a feint decoy that vanishes instead of breaching at close range', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 202);
+  C.startNight(s, 3);
+  const realC = s.creatures.find((c) => !c.feint);
+  const feintC = s.creatures.find((c) => c.feint);
+  assert.ok(realC, 'Night 3 must have a real creature');
+  assert.ok(feintC, 'Night 3 must have a feint decoy creature');
+
+  // Keep real creature far away, put feint creature right at the window in a blindspot
+  realC.dist = 0.9;
+  feintC.dir = 'LEFT';
+  feintC.dist = 0.16;
+  s.cockpit.panX = 320;
+
+  C.step(s, {}, 0.2);
+  assert.equal(s.phase, 'PLAYING', 'feint decoy must not trigger BREACH game over');
+  assert.ok(feintC.dist > 0.7, 'feint decoy should vanish and relocate to far distance');
+  assert.ok(s.events.some((e) => e.type === 'FEINT_VANISH'));
+});
+
+test('B3: PLAYING phase emits accelerating HEARTBEAT and periodic RAIN_AMBIENCE events', () => {
+  const s = C.createGame(C.makeConfig({ rainRate: 0 }), 203);
+  C.startNight(s, 1);
+  const c = s.creatures[0];
+  c.dir = 'FRONT';
+  c.dist = 0.25; // Close range -> fast heartbeat
+  s.cockpit.panX = 160;
+
+  let heartbeats = 0;
+  let rainTicks = 0;
+  for (let i = 0; i < 20; i++) {
+    C.step(s, {}, 0.1);
+    for (const ev of s.events) {
+      if (ev.type === 'HEARTBEAT') heartbeats++;
+      if (ev.type === 'RAIN_AMBIENCE') rainTicks++;
+    }
+  }
+  assert.ok(heartbeats >= 2, `expected at least 2 heartbeats in 2.0s at close range, got ${heartbeats}`);
+  assert.ok(rainTicks >= 2, `expected at least 2 rain ambience events in 2.0s, got ${rainTicks}`);
+});
+
+

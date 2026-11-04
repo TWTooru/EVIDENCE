@@ -120,6 +120,28 @@
     toneStereo('triangle', 783.99, 783.99, 0.6, 0.35, 0, 0.36);
   }
 
+  function heartbeat(near) {
+    const v = 0.22 + 0.5 * Math.max(0, Math.min(1, near || 0.4));
+    toneStereo('sine', 68, 42, 0.11, v, 0, 0);
+    toneStereo('sine', 64, 38, 0.09, v * 0.65, 0, 0.16);
+  }
+
+  function rainAmbience(intensity) {
+    const mult = Math.max(0.5, Math.min(2.2, intensity || 1.0));
+    noiseStereo(0.42, 0.055 * mult, 'bandpass', 680, 0, 0);
+  }
+
+  function branchSnapStereo(pan, near) {
+    const v = 0.2 + 0.35 * (near || 0.4);
+    noiseStereo(0.05, v, 'highpass', 1400, pan, 0);
+    toneStereo('triangle', 290, 95, 0.06, v * 0.7, pan, 0.01);
+  }
+
+  function feintVanish(pan) {
+    toneStereo('sine', 620, 140, 0.28, 0.25, pan, 0);
+    noiseStereo(0.24, 0.22, 'bandpass', 1600, pan, 0);
+  }
+
   function updateRadio(pan, intensity, blackout) {
     if (!ac || blackout || intensity <= 0.35) return;
     if (Math.random() < intensity * 0.18) {
@@ -141,6 +163,10 @@
         break;
       case 'GLASS_SHATTER': glassShatter(); break;
       case 'DAWN_CHIME': dawnChime(); break;
+      case 'HEARTBEAT': heartbeat(ev.near); break;
+      case 'RAIN_AMBIENCE': rainAmbience(ev.intensity); break;
+      case 'BRANCH_SNAP': branchSnapStereo(ev.pan, ev.near); break;
+      case 'FEINT_VANISH': feintVanish(ev.pan); break;
       default: break;
     }
   }
@@ -157,6 +183,10 @@
     monsterScream,
     glassShatter,
     dawnChime,
+    heartbeat,
+    rainAmbience,
+    branchSnapStereo,
+    feintVanish,
     updateRadio,
   };
 
