@@ -143,6 +143,10 @@
     coilMult: 1.65,         // Explosive lunge multiplier in COIL pose
     lungeMult: 1.50,        // Point-blank lunge multiplier in LUNGE pose
     lungeDist: 0.36,        // Distance threshold where creature enters LUNGE pose
+    flashlightDist: 0.42,   // Max distance for SURVIVAL flashlight blast relocation
+    flashlightChargeTime: 2.2, // Flashlight capacitor recharge time (s)
+    flashlightBlindTime: 0.65, // Flashlight blast glare duration (s)
+    flashlightBeamR: 52,    // Flashlight beam radius (px)
     debug: 0,
   };
 
@@ -170,6 +174,18 @@
 
   function clamp(v, lo, hi) {
     return Math.min(hi, Math.max(lo, v));
+  }
+
+  function driftLateral(c, speed, dt) {
+    const latDir = c.lateralDir || 1;
+    c.offsetX = (c.offsetX || 0) + latDir * speed * dt;
+    if (c.offsetX > 42) {
+      c.offsetX = 42;
+      c.lateralDir = -1;
+    } else if (c.offsetX < -42) {
+      c.offsetX = -42;
+      c.lateralDir = 1;
+    }
   }
 
   function nightSettings(night, cfg) {
@@ -422,6 +438,36 @@
     };
   }
 
+  function inspectFlashlightTarget(state) {
+    const vf = getViewfinderRect(state);
+    let bestCreature = null;
+    for (const c of state.creatures) {
+      const rect = creatureScreenRect(c, state.cockpit.panX);
+      if (overlapArea(vf, rect) > 0) {
+        if (!bestCreature || c.dist < bestCreature.dist) {
+          bestCreature = c;
+        }
+      }
+    }
+    if (!bestCreature) {
+      return {
+        hasTarget: false,
+        inBlastRange: false,
+        dist: 1,
+        illumination: 0,
+        creature: null,
+      };
+    }
+    const span = Math.max(0.01, 0.82 - state.cfg.flashlightDist);
+    return {
+      hasTarget: true,
+      inBlastRange: bestCreature.dist <= state.cfg.flashlightDist,
+      dist: bestCreature.dist,
+      illumination: clamp((0.82 - bestCreature.dist) / span, 0.12, 1),
+      creature: bestCreature,
+    };
+  }
+
   function spawnCreature(id, ns, rng, forceDir, speedScale) {
     const dirs = ns.dirs;
     const dir = forceDir || dirs[Math.floor(rng() * dirs.length)];
@@ -462,10 +508,13 @@
         duration: cfg.nightDuration,
         evidenceCount: 0,
         requiredEvidence: 2,
+        subPhase: 'EVIDENCE',
       },
       cockpit: {
         panX: 160,            // 160 centers on FRONT window (320 - 160)
         vfActive: false,      // True while camera viewfinder is held up over naked eyes
+        toolMode: 'CAMERA',   // 'CAMERA' | 'FLASHLIGHT'
+        survivalBannerTimer: 0,
         overloadCount: 0,     // Cumulative psychic signal overloads this night (3rd overload = fatal breach!)
         eyeStrain: 0,         // 0..1 psychic signal interference from staring directly into the entity's eyes
         blinkTarget: 0.94,    // Organic overload threshold (0.88..1.0)
@@ -505,6 +554,7 @@
       duration: ns.duration,
       evidenceCount: 0,
       requiredEvidence: ns.requiredEvidence || 2,
+      subPhase: 'EVIDENCE',
       escapedEarly: false,
       timeBonus: 0,
       settings: ns,
@@ -512,6 +562,8 @@
 
     state.cockpit.panX = 160;
     state.cockpit.vfActive = false;
+    state.cockpit.toolMode = 'CAMERA';
+    state.cockpit.survivalBannerTimer = 0;
     state.cockpit.overloadCount = 0;
     state.cockpit.eyeStrain = 0;
     state.cockpit.blinkTarget = 0.88 + state.rng() * 0.12;
@@ -571,8 +623,32 @@
     c.shiftTimer = ns.shiftMin + state.rng() * ns.shiftSpan;
   }
 
-  function handleShutter(state) {
-    const { camera, cockpit, cfg } = state;
+  function handleShutter(state, blastedSet) {
+    const { camera, cockpit, cfg, night } = state;
+    if (night.subPhase === 'SURVIVAL' || cockpit.toolMode === 'FLASHLIGHT') {
+      if (camera.chargeTimer > 0) return false;
+      camera.chargeTimer = cfg.flashlightChargeTime;
+      camera.blindTimer = cfg.flashlightBlindTime;
+      state.events.push({ type: 'FLASHLIGHT_BLAST' });
+
+      const vf = getViewfinderRect(state);
+      for (const c of state.creatures) {
+        const rect = creatureScreenRect(c, cockpit.panX);
+        const inAimedWindow = (rect.eyeX >= DIRECT_GAZE_MIN_X && rect.eyeX <= DIRECT_GAZE_MAX_X) || overlapArea(vf, rect) > 0;
+        if (inAimedWindow) {
+          if (c.dist <= cfg.flashlightDist) {
+            state.events.push({ type: 'MONSTER_SCREAM', dir: c.dir });
+            relocateCreature(c, state);
+          } else {
+            c.dist = Math.min(0.95, Number((c.dist + 0.08).toFixed(3)));
+            c.unwatchedTime = 0;
+          }
+          if (blastedSet) blastedSet.add(c);
+        }
+      }
+      return true;
+    }
+
     if (camera.filmLeft <= 0 || camera.chargeTimer > 0) return false;
 
     camera.filmLeft -= 1;
@@ -606,6 +682,7 @@
       if (inAimedWindow) {
         state.events.push({ type: 'MONSTER_SCREAM', dir: c.dir });
         relocateCreature(c, state);
+        if (blastedSet) blastedSet.add(c);
       }
     }
 
@@ -725,25 +802,33 @@
     if (cockpit.shootHintTimer > 0) {
       cockpit.shootHintTimer = Math.max(0, cockpit.shootHintTimer - dt);
     }
+    cockpit.survivalBannerTimer = Math.max(0, (cockpit.survivalBannerTimer || 0) - dt);
 
+    const blastedThisTick = new Set();
     if (inp.shoot) {
       if (cockpit.vfActive) {
-        handleShutter(state);
+        handleShutter(state, blastedThisTick);
       } else {
         cockpit.shootHintTimer = 1.2;
         state.events.push({ type: 'SWITCH_CLICK' });
       }
     }
 
-    // Once all required EVIDENCE photos for this night are secured (and 1s flash glare clears), advance to NIGHT_SUMMARY!
-    if (night.evidenceCount >= reqEvidence && camera.blindTimer <= 0) {
-      state.phase = 'NIGHT_SUMMARY';
-      state.events.push({ type: 'DAWN_CHIME' });
-      return state;
+    // Once all required EVIDENCE photos for this night are secured (and 1s flash glare clears), transition seamlessly to Phase 2 SURVIVAL!
+    if (night.subPhase !== 'SURVIVAL' && night.evidenceCount >= reqEvidence && camera.blindTimer <= 0) {
+      night.subPhase = 'SURVIVAL';
+      cockpit.toolMode = 'FLASHLIGHT';
+      cockpit.vfActive = false;
+      cockpit.survivalBannerTimer = 3.5;
+      camera.photoPopupTimer = 0;
+      if (night.timeElapsed < night.duration * 0.6) {
+        night.timeElapsed = night.duration * 0.6;
+      }
+      state.events.push({ type: 'SURVIVAL_START' });
     }
 
     // If remaining film exposures cannot possibly reach the required evidence count -> investigation failed
-    if (night.evidenceCount + camera.filmLeft < reqEvidence && camera.blindTimer === 0) {
+    if (night.subPhase !== 'SURVIVAL' && night.evidenceCount + camera.filmLeft < reqEvidence && camera.blindTimer === 0) {
       state.phase = 'GAME_OVER';
       state.endReason = 'OUT_OF_FILM';
       return state;
@@ -829,6 +914,10 @@
     let closestCreature = null;
 
     for (const c of state.creatures) {
+      if (blastedThisTick.has(c)) {
+        if (!closestCreature || c.dist < closestCreature.dist) closestCreature = c;
+        continue;
+      }
       if (justBlinked) {
         if (!closestCreature || c.dist < closestCreature.dist) closestCreature = c;
         if (c.dist <= 0) {
@@ -845,6 +934,7 @@
       const inCone = isCreatureInViewCone(c, state);
       const gazed = isCreatureGazed(c, state);
       const luredInVf = inCone && cockpit.vfActive && camera.blindTimer <= 0;
+      const farWaitLure = luredInVf && night.subPhase !== 'SURVIVAL' && c.dist > 0.62 && (c.pose || 'WAIT') === 'WAIT';
 
       c.glintVisible = Math.max(0, (c.glintVisible || 0) - dt);
 
@@ -875,22 +965,17 @@
         c.unwatchedTime = (c.unwatchedTime || 0) + dt;
 
         if (luredInVf) {
-          // Camera body covers your naked eyes -> creature unfreezes and stalks straight toward the lens!
-          if (c.offsetX) {
+          if (farWaitLure) {
+            // Phase 1 anti-cheese: holding SHIFT on a far WAIT creature makes it drift laterally instead of auto-centering
+            driftLateral(c, 18, dt);
+          } else if (c.offsetX) {
+            // Camera body covers your naked eyes -> creature unfreezes and stalks straight toward the lens!
             const pull = Math.min(Math.abs(c.offsetX), 28 * dt);
             c.offsetX -= Math.sign(c.offsetX) * pull;
           }
         } else {
           // Lateral movement between pine trees when unwatched in a blindspot
-          const latDir = c.lateralDir || 1;
-          c.offsetX = (c.offsetX || 0) + latDir * 22 * dt;
-          if (c.offsetX > 42) {
-            c.offsetX = 42;
-            c.lateralDir = -1;
-          } else if (c.offsetX < -42) {
-            c.offsetX = -42;
-            c.lateralDir = 1;
-          }
+          driftLateral(c, 22, dt);
 
           // Window shifting when left unwatched at medium-to-far range
           c.shiftTimer = (c.shiftTimer !== undefined ? c.shiftTimer : 5.0) - dt;
@@ -905,7 +990,10 @@
 
         // Pose-driven approach rhythm: deceptive slow WAIT -> explosive COIL -> point-blank LUNGE
         let poseMult = 1.0;
-        if (c.dist <= cfg.lungeDist) {
+        if (farWaitLure) {
+          c.pose = 'WAIT';
+          poseMult = 0.28;
+        } else if (c.dist <= cfg.lungeDist) {
           c.pose = 'LUNGE';
           poseMult = cfg.lungeMult;
         } else if ((c.pose || 'WAIT') === 'WAIT') {
@@ -920,7 +1008,8 @@
           poseMult = cfg.coilMult;
         }
 
-        const stepDist = cfg.approachSpeed * ns.approachMult * (c.speedScale || 1.0) * poseMult * dt;
+        const survivalMult = night.subPhase === 'SURVIVAL' ? 1.15 : 1.0;
+        const stepDist = cfg.approachSpeed * ns.approachMult * (c.speedScale || 1.0) * poseMult * survivalMult * dt;
         c.dist = Math.max(0, c.dist - stepDist);
         if (c.dist <= cfg.lungeDist) c.pose = 'LUNGE';
 
@@ -997,6 +1086,7 @@
     isCreatureGazed,
     gradePhoto,
     inspectViewfinderTarget,
+    inspectFlashlightTarget,
     createGame,
     startNight,
     step,
