@@ -1230,8 +1230,11 @@
     const r = C.creatureScreenRect(c, cockpit.panX);
     if (r.x + r.w < -8 || r.x > W + 8) return;
 
+    const isSurvival = state.night && state.night.subPhase === 'SURVIVAL';
     const inCone = C.isCreatureInViewCone(c, state);
     const inPeripheral = C.isCreatureInPeripheral ? C.isCreatureInPeripheral(c, state) : !inCone;
+    const litByFlashlight = isSurvival && cockpit.vfActive && inCone && state.camera.blindTimer <= 0;
+    const lightningLit = (cockpit.lightningFlash || 0) > 0.12;
     const time = state.night ? state.night.timeElapsed : 0;
 
     // 1. PERIPHERAL VISION OPPRESSION (Teacher Feedback #3):
@@ -1251,26 +1254,32 @@
 
       ctx.save();
       ctx.globalAlpha = clamp(0.68 + (1 - c.dist) * 0.28, 0.65, 0.96);
-      drawCreatureBodyPass(
-        ctx,
-        pcx,
-        { x: r.x, y: r.y + strideBob, w: r.w, h: r.h },
-        pHeadR,
-        pShoulderW,
-        pTorsoW,
-        pArmW,
-        pPose,
-        pHeadX,
-        pHeadY,
-        PAL.creatureShadow,
-        PAL.creatureRim
-      );
+      if (!isSurvival || lightningLit) {
+        drawCreatureBodyPass(
+          ctx,
+          pcx,
+          { x: r.x, y: r.y + strideBob, w: r.w, h: r.h },
+          pHeadR,
+          pShoulderW,
+          pTorsoW,
+          pArmW,
+          pPose,
+          pHeadX,
+          pHeadY,
+          PAL.creatureShadow,
+          PAL.creatureRim
+        );
+      } else if (c.dist <= 0.34) {
+        ctx.fillStyle = PAL.breathFog;
+        ctx.fillRect(Math.round(pHeadX - pHeadR * 1.35), Math.round(pHeadY + pHeadR * 0.55), Math.round(pHeadR * 2.7), Math.round(pHeadR * 1.6));
+      }
       // Crimson eyes gleaming in your peripheral vision as it stalks closer!
       const pEyeY = (pPose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY) + strideBob;
       const pEyeSep = Math.max(3, Math.round(pHeadR * 0.52));
+      const pEyeSize = (isSurvival && c.dist <= state.cfg.lungeDist) ? 3 : 2;
       ctx.fillStyle = PAL.eyeRed;
-      ctx.fillRect(Math.round(pHeadX - pEyeSep - 1), pEyeY, 2, 2);
-      ctx.fillRect(Math.round(pHeadX + pEyeSep - 1), pEyeY, 2, 2);
+      ctx.fillRect(Math.round(pHeadX - pEyeSep - 1), pEyeY, pEyeSize, pEyeSize);
+      ctx.fillRect(Math.round(pHeadX + pEyeSep - 1), pEyeY, pEyeSize, pEyeSize);
       ctx.restore();
       return;
     }
@@ -1278,7 +1287,7 @@
     // 2. OPTICAL VIEWFINDER BLUR-TO-SHARP (Teacher Feedback #1):
     // When the camera is raised (vfActive), if the creature is still too far (> evidenceDist),
     // it appears blurry/out-of-focus in the viewfinder and progressively sharpens as it approaches!
-    const vfBlur = (cockpit.vfActive && inCone)
+    const vfBlur = (!isSurvival && cockpit.vfActive && inCone)
       ? (c.dist <= state.cfg.evidenceDist ? 0 : clamp((c.dist - state.cfg.evidenceDist) / 0.44, 0.14, 1.0))
       : 0;
 
@@ -1299,6 +1308,28 @@
     const headOffset = pose === 'WAIT' ? Math.max(2, Math.round(headR * 0.42)) : 0;
     const headCenterX = cx + headOffset + subliminalSnap;
     const headTopY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14) : r.y;
+
+    // SURVIVAL unlit pitch darkness: hide body silhouette, render ONLY red eyes (+ close breath fog)
+    if (isSurvival && !litByFlashlight && !lightningLit) {
+      const swayX = !inCone ? Math.round(Math.cos(time * 5.5 + c.id) * 2) : 0;
+      const swayY = !inCone ? Math.round(Math.sin(time * 8.5 + c.id) * 2) : 0;
+      const eyeY = (pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY) + swayY;
+      const eyeSep = Math.max(3, Math.round(headR * 0.52));
+      const eyeSize = c.dist <= state.cfg.lungeDist ? 3 : 2;
+      if (c.dist <= 0.34) {
+        ctx.fillStyle = PAL.breathFog;
+        ctx.fillRect(
+          Math.round(headCenterX + swayX - headR * 1.35),
+          Math.round(eyeY + headR * 0.15),
+          Math.round(headR * 2.7),
+          Math.round(headR * 1.6)
+        );
+      }
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX + swayX - eyeSep - 1), eyeY, eyeSize, eyeSize);
+      ctx.fillRect(Math.round(headCenterX + swayX + eyeSep - 1), eyeY, eyeSize, eyeSize);
+      return;
+    }
 
     if (vfBlur > 0.05) {
       // Out-of-focus ghosted silhouette passes (spread shrinks to 0 as creature approaches focus distance!)
@@ -1342,17 +1373,37 @@
       return;
     }
 
-    // 3. RAZOR-SHARP RENDERING (Direct Gaze OR Locked In-Focus Viewfinder!)
+    const eyeY = pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY;
+    const eyeSep = Math.max(3, Math.round(headR * 0.52));
+
+    // SURVIVAL flashlight beam at far range (> flashlightDist): dim body silhouette + red eyes only
+    if (litByFlashlight && c.dist > state.cfg.flashlightDist) {
+      ctx.save();
+      ctx.globalAlpha = clamp((0.88 - c.dist) / 0.46, 0.32, 0.85);
+      drawCreatureBodyPass(ctx, cx, r, headR, shoulderW, torsoW, armW, pose, headCenterX, headTopY, PAL.creatureShadow, PAL.creatureRim);
+      ctx.restore();
+      const eyeSize = c.dist <= state.cfg.lungeDist ? 3 : 2;
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - 1), eyeY, eyeSize, eyeSize);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - 1), eyeY, eyeSize, eyeSize);
+      return;
+    }
+
+    const flashClose = litByFlashlight && c.dist <= state.cfg.flashlightDist;
+
+    // 3. RAZOR-SHARP RENDERING (Direct Gaze, In-Focus Viewfinder, or Close Flashlight Illumination!)
     drawCreatureBodyPass(ctx, cx, r, headR, shoulderW, torsoW, armW, pose, headCenterX, headTopY, PAL.creatureShadow, PAL.creatureRim);
 
-    if (pose === 'LUNGE') {
+    if (pose === 'LUNGE' || flashClose) {
       const lungeW = Math.round(shoulderW * 1.28);
-      if (c.dist <= state.cfg.evidenceDist) {
+      if (c.dist <= state.cfg.evidenceDist || flashClose) {
         ctx.fillStyle = PAL.breathFog;
         ctx.fillRect(Math.round(headCenterX - headR * 1.35), Math.round(r.eyeY + headR * 0.15), Math.round(headR * 2.7), Math.round(headR * 1.6));
       }
-      if (c.dist <= 0.24) {
-        const palmY = Math.round(headTopY + headR * 0.85);
+      if (c.dist <= 0.24 || flashClose) {
+        const palmY = pose === 'LUNGE'
+          ? Math.round(headTopY + headR * 0.85)
+          : Math.round(r.y + headR * 1.6 + r.h * 0.52);
         const leftPalmX = Math.round(cx - lungeW * 0.68);
         const rightPalmX = Math.round(cx + lungeW * 0.52);
         ctx.fillStyle = PAL.corpseDim;
@@ -1367,20 +1418,17 @@
     }
 
     const rimY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14 + headR * 0.8) : Math.round(r.y + headR * 1.5);
-    if ((stareReveal > 0.48 || cockpit.vfActive) && headR >= 7) {
-      ctx.fillStyle = PAL.corpseDim;
+    if ((stareReveal > 0.48 || cockpit.vfActive || flashClose) && headR >= 7) {
+      ctx.fillStyle = flashClose ? PAL.corpsePale : PAL.corpseDim;
       for (let rib = 0; rib < 3; rib++) {
         ctx.fillRect(Math.round(cx - torsoW * 0.32), rimY + 8 + rib * 5, Math.round(torsoW * 0.64), 1);
       }
     }
 
-    // Uncanny Eyes & Rictus Grin: razor-sharp when in-focus in viewfinder or stared at!
-    const eyeY = pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY;
-    const eyeSep = Math.max(3, Math.round(headR * 0.52));
-
-    if (stareReveal > 0.36 || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist)) {
-      const scleraW = c.dist <= 0.28 ? 6 : (headR >= 8 ? 4 : 3);
-      const scleraH = c.dist <= 0.28 ? 5 : 3;
+    // Uncanny Eyes & Rictus Grin: razor-sharp when in-focus in viewfinder, close in flashlight, or stared at!
+    if (stareReveal > 0.36 || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist) || flashClose) {
+      const scleraW = (c.dist <= 0.28 || flashClose) ? 6 : (headR >= 8 ? 4 : 3);
+      const scleraH = (c.dist <= 0.28 || flashClose) ? 5 : 3;
       ctx.fillStyle = PAL.corpsePale;
       ctx.fillRect(Math.round(headCenterX - eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
       ctx.fillRect(Math.round(headCenterX + eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
@@ -1397,14 +1445,14 @@
       ctx.fillRect(Math.round(headCenterX + eyeSep - 1), eyeY, eyeSize, eyeSize);
     }
 
-    if (stareReveal > 0.52 || pose === 'LUNGE' || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist)) {
+    if (stareReveal > 0.52 || pose === 'LUNGE' || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist) || flashClose) {
       const mouthW = Math.max(4, Math.round(headR * 0.95));
-      const mouthH = c.dist <= 0.34 ? Math.max(6, Math.round(headR * 0.80)) : Math.max(3, Math.round(headR * 0.45));
+      const mouthH = (c.dist <= 0.34 || flashClose) ? Math.max(6, Math.round(headR * 0.80)) : Math.max(3, Math.round(headR * 0.45));
       const mouthX = Math.round(headCenterX - mouthW / 2);
       const mouthY = Math.round(eyeY + Math.max(4, headR * 0.48));
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(mouthX - 1, mouthY - 1, mouthW + 2, mouthH + 2);
-      ctx.fillStyle = c.dist <= 0.34 ? PAL.corpsePale : PAL.corpseDim;
+      ctx.fillStyle = (c.dist <= 0.34 || flashClose) ? PAL.corpsePale : PAL.corpseDim;
       for (let tx = 0; tx < mouthW; tx += 2) {
         ctx.fillRect(mouthX + tx, mouthY, 1, mouthH);
       }
@@ -1415,26 +1463,30 @@
     const { cockpit } = state;
     const panX = cockpit.panX;
     const horizonY = 104;
+    const isSurvival = state.night && state.night.subPhase === 'SURVIVAL';
+    const pitchBlack = isSurvival && (cockpit.lightningFlash || 0) <= 0.1;
 
     // Layer 1: Storm Sky & Lightning
-    ctx.fillStyle = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : PAL.nightSky;
+    ctx.fillStyle = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : (pitchBlack ? PAL.voidBlack : PAL.nightSky);
     ctx.fillRect(0, 0, W, horizonY);
 
-    ctx.fillStyle = PAL.stormCloud;
-    for (let i = 0; i < 6; i++) {
-      const cx = ((i * 110 - Math.round(panX * 0.2)) % (W + 120)) - 40;
-      ctx.fillRect(cx, 14 + (i % 2) * 12, 86, 10);
+    if (!pitchBlack) {
+      ctx.fillStyle = PAL.stormCloud;
+      for (let i = 0; i < 6; i++) {
+        const cx = ((i * 110 - Math.round(panX * 0.2)) % (W + 120)) - 40;
+        ctx.fillRect(cx, 14 + (i % 2) * 12, 86, 10);
+      }
     }
 
     // Mud ground
-    ctx.fillStyle = PAL.mudGround;
+    ctx.fillStyle = pitchBlack ? PAL.voidBlack : PAL.mudGround;
     ctx.fillRect(0, horizonY, W, H - horizonY);
 
     // Layer 2: Far pine treeline (Parallax 0.55)
     for (const t of FOREST_TREES) {
       if (t.layer === 1) {
         const sx = t.wx - panX * 0.55;
-        drawPine16Bit(ctx, sx, horizonY + 12, Math.round(t.w * 0.75), Math.round(t.h * 0.75), PAL.farPine, null);
+        drawPine16Bit(ctx, sx, horizonY + 12, Math.round(t.w * 0.75), Math.round(t.h * 0.75), pitchBlack ? PAL.voidBlack : PAL.farPine, null);
       }
     }
 
@@ -1447,8 +1499,8 @@
     for (const t of FOREST_TREES) {
       if (t.layer === 2) {
         const sx = t.wx - panX * 0.85;
-        const rim = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : PAL.creatureRim;
-        drawPine16Bit(ctx, sx, horizonY + 34, t.w, t.h, PAL.midPine, rim);
+        const rim = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : (pitchBlack ? null : PAL.creatureRim);
+        drawPine16Bit(ctx, sx, horizonY + 34, t.w, t.h, pitchBlack ? PAL.voidBlack : PAL.midPine, rim);
       }
     }
   }
@@ -1574,14 +1626,45 @@
       text(ctx, 'EXP: ' + camera.filmLeft, passX + 16, sillY + 29, PAL.polaroidWhite, 8);
     }
 
-    // Subtle top headliner strip (Night, Time, Film left, Photo count)
+    const isSurvival = night && night.subPhase === 'SURVIVAL';
+
+    // Put-down 35mm SLR camera resting on the left window sill once EVIDENCE phase is complete
+    if (isSurvival) {
+      const camX = Math.round(210 - panX);
+      const camY = sillY + 10;
+      if (camX + 56 > 0 && camX < W) {
+        ctx.fillStyle = PAL.voidBlack;
+        ctx.fillRect(camX, camY + 4, 42, 20);
+        ctx.fillRect(camX + 12, camY, 18, 5);
+        ctx.fillStyle = PAL.cockpitTrim;
+        ctx.fillRect(camX + 1, camY + 5, 40, 4);
+        ctx.fillStyle = PAL.corpseDim;
+        ctx.fillRect(camX + 34, camY + 2, 4, 2);
+        ctx.fillStyle = PAL.cockpitDark;
+        ctx.fillRect(camX + 14, camY + 9, 14, 12);
+        ctx.strokeStyle = PAL.corpseDim;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(camX + 14, camY + 9, 14, 12);
+        ctx.fillStyle = PAL.voidBlack;
+        ctx.fillRect(camX + 17, camY + 12, 8, 6);
+        text(ctx, 'SLR (DONE)', camX + 21, camY + 27, PAL.amberDim, 7, 'center');
+      }
+    }
+
+    // Subtle top headliner strip (Night, Time, Film/Flashlight, Proof/Survive)
     const reqEv = night.requiredEvidence || (night.settings && night.settings.requiredEvidence) || 2;
     ctx.fillStyle = 'rgba(7, 8, 13, 0.72)';
     ctx.fillRect(6, 4, 308, 13);
     text(ctx, 'NIGHT ' + night.number, 10, 6, PAL.amberDim, 8);
-    text(ctx, clockStr, 86, 6, PAL.polaroidWhite, 8);
-    text(ctx, 'FILM:' + camera.filmLeft, 166, 6, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
-    text(ctx, 'PROOF:' + night.evidenceCount + '/' + reqEv, 238, 6, night.evidenceCount >= reqEv ? PAL.quartzGreen : PAL.amberDim, 8);
+    if (isSurvival) {
+      text(ctx, clockStr, 82, 6, PAL.polaroidWhite, 8);
+      text(ctx, 'FLASHLIGHT', 152, 6, PAL.amberGlow, 8);
+      text(ctx, 'SURVIVE->5AM', 228, 6, PAL.quartzGreen, 8);
+    } else {
+      text(ctx, clockStr, 86, 6, PAL.polaroidWhite, 8);
+      text(ctx, 'FILM:' + camera.filmLeft, 166, 6, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
+      text(ctx, 'PROOF:' + night.evidenceCount + '/' + reqEv, 238, 6, night.evidenceCount >= reqEv ? PAL.quartzGreen : PAL.amberDim, 8);
+    }
 
     // Peripheral Vision Oppression (Teacher Feedback #3):
     // When looking at Window A, if an unwatched creature is stalking in adjacent Window B,
@@ -1596,20 +1679,22 @@
       const bob = Math.round(Math.sin(time * 8 + c.id) * 2);
       ctx.save();
       // Cold breath fog on peripheral glass edge
-      ctx.globalAlpha = clamp(near * 0.34, 0.08, 0.38);
-      ctx.fillStyle = PAL.corpsePale;
+      ctx.globalAlpha = isSurvival ? clamp(near * 0.85, 0.35, 0.95) : clamp(near * 0.34, 0.08, 0.38);
+      ctx.fillStyle = isSurvival ? PAL.breathFog : PAL.corpsePale;
       ctx.fillRect(edgeX, 52, 22, 84);
-      // Creeping peripheral dark silhouette peeking from adjacent window
+      // Creeping peripheral dark silhouette peeking from adjacent window (omitted in pitch-black SURVIVAL)
       const silW = Math.round(10 + near * 10);
       const silH = Math.round(38 + near * 42);
       const silX = isLeft ? 0 : W - silW;
       const silY = Math.round(112 - silH / 2) + bob;
-      ctx.globalAlpha = clamp(0.45 + near * 0.45, 0.45, 0.90);
-      ctx.fillStyle = PAL.creatureShadow;
-      ctx.fillRect(silX, silY, silW, silH);
-      ctx.fillStyle = PAL.creatureRim;
-      ctx.fillRect(isLeft ? silW - 2 : silX, silY, 2, silH);
-      if (c.dist <= state.cfg.lungeDist || (c.glintVisible || 0) > 0 || near > 0.32) {
+      if (!isSurvival || (cockpit.lightningFlash || 0) > 0.12) {
+        ctx.globalAlpha = clamp(0.45 + near * 0.45, 0.45, 0.90);
+        ctx.fillStyle = PAL.creatureShadow;
+        ctx.fillRect(silX, silY, silW, silH);
+        ctx.fillStyle = PAL.creatureRim;
+        ctx.fillRect(isLeft ? silW - 2 : silX, silY, 2, silH);
+      }
+      if (isSurvival || c.dist <= state.cfg.lungeDist || (c.glintVisible || 0) > 0 || near > 0.32) {
         ctx.globalAlpha = clamp(near * 0.88, 0.28, 0.92);
         ctx.fillStyle = PAL.eyeRed;
         const rx = isLeft ? Math.max(3, silW - 5) : Math.min(W - 5, silX + 3);
@@ -1653,44 +1738,95 @@
   function drawViewfinderAndPhoto(ctx, state) {
     const { cockpit, camera } = state;
     const time = state.night ? state.night.timeElapsed : 0;
+    const isSurvival = state.night && state.night.subPhase === 'SURVIVAL';
 
-    // 1. Camera Viewfinder with Pure Blur-to-Sharp Optical Focus (No modern autofocus brackets!)
+    // 1. Camera Viewfinder (EVIDENCE) OR Circular/Octagonal Flashlight Beam (SURVIVAL)
     if (cockpit.vfActive) {
       const vf = C.getViewfinderRect(state);
-      const ready = camera.chargeTimer <= 0 && camera.filmLeft > 0;
-      const targetInfo = C.inspectViewfinderTarget(state);
-      const blur = targetInfo.blurAmount !== undefined ? targetInfo.blurAmount : (1 - (targetInfo.focusRatio || 0));
+      if (isSurvival) {
+        const cx = Math.round(vf.x + vf.w / 2);
+        const cy = Math.round(vf.y + vf.h / 2);
+        const r = (state.cfg && state.cfg.flashlightBeamR) || 52;
+        const bx = cx - r;
+        const by = cy - r;
+        const bw = r * 2;
+        const bh = r * 2;
+        const ready = camera.chargeTimer <= 0;
 
-      // Heavy dark camera body mask blocking your naked eyes outside the viewfinder
-      ctx.fillStyle = 'rgba(5, 6, 9, 0.90)';
-      ctx.fillRect(0, 18, W, vf.y - 18);
-      ctx.fillRect(0, vf.y + vf.h, W, H - (vf.y + vf.h));
-      ctx.fillRect(0, vf.y, vf.x, vf.h);
-      ctx.fillRect(vf.x + vf.w, vf.y, W - (vf.x + vf.w), vf.h);
+        // Dark surrounding mask strips outside the beam box
+        ctx.fillStyle = 'rgba(4, 5, 8, 0.88)';
+        ctx.fillRect(0, 18, W, Math.max(0, by - 18));
+        ctx.fillRect(0, by + bh, W, Math.max(0, H - (by + bh)));
+        ctx.fillRect(0, by, Math.max(0, bx), bh);
+        ctx.fillRect(bx + bw, by, Math.max(0, W - (bx + bw)), bh);
 
-      // Out-of-focus optical blur haze inside the viewfinder when target is too far (clears up as it approaches!)
-      if (blur > 0.04) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(18, 26, 40, ' + (blur * 0.34).toFixed(2) + ')';
-        ctx.fillRect(vf.x + 1, vf.y + 1, vf.w - 2, vf.h - 2);
-        // Defocus bokeh / horizontal lens blur bands that dissolve as focus sharpens
-        const bandCount = Math.ceil(blur * 10);
-        ctx.fillStyle = 'rgba(143, 168, 214, ' + (blur * 0.14).toFixed(2) + ')';
-        for (let i = 0; i < bandCount; i++) {
-          const by = vf.y + 4 + ((i * 11 + Math.round(time * 24)) % (vf.h - 10));
-          ctx.fillRect(vf.x + 3, by, vf.w - 6, 2);
+        // 16-bit stepped corner masks & warm incandescent beam tint forming a circular/octagonal spotlight cone
+        const step = 4;
+        for (let i = 0; i < bh; i += step) {
+          const sh = Math.min(step, bh - i);
+          const ry = by + i;
+          const dy = (i + sh / 2) - r;
+          const halfW = Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
+          const maskW = Math.max(0, r - halfW);
+          if (maskW > 0) {
+            ctx.fillStyle = 'rgba(4, 5, 8, 0.88)';
+            ctx.fillRect(bx, ry, maskW, sh);
+            ctx.fillRect(bx + bw - maskW, ry, maskW, sh);
+          }
+          if (halfW > 0) {
+            ctx.fillStyle = 'rgba(255, 210, 120, 0.11)';
+            ctx.fillRect(cx - halfW, ry, halfW * 2, sh);
+          }
         }
-        ctx.restore();
+
+        // Physical flashlight barrel silhouette at the bottom center of the beam
+        const barrelX = cx - 18;
+        const barrelY = vf.y + vf.h;
+        ctx.fillStyle = PAL.cockpitDark;
+        ctx.fillRect(barrelX, barrelY, 36, H - barrelY);
+        ctx.fillStyle = PAL.cockpitTrim;
+        ctx.fillRect(barrelX + 2, barrelY, 32, 5);
+        ctx.fillStyle = PAL.corpseDim;
+        ctx.fillRect(barrelX + 4, barrelY + 2, 28, 2);
+        // Single physical charge LED dot (green when ready, red while recharging) — zero red warning borders
+        ctx.fillStyle = ready ? PAL.quartzGreen : PAL.dangerRed;
+        ctx.fillRect(cx - 1, barrelY + 11, 3, 3);
+      } else {
+        const ready = camera.chargeTimer <= 0 && camera.filmLeft > 0;
+        const targetInfo = C.inspectViewfinderTarget(state);
+        const blur = targetInfo.blurAmount !== undefined ? targetInfo.blurAmount : (1 - (targetInfo.focusRatio || 0));
+
+        // Heavy dark camera body mask blocking your naked eyes outside the viewfinder
+        ctx.fillStyle = 'rgba(5, 6, 9, 0.90)';
+        ctx.fillRect(0, 18, W, vf.y - 18);
+        ctx.fillRect(0, vf.y + vf.h, W, H - (vf.y + vf.h));
+        ctx.fillRect(0, vf.y, vf.x, vf.h);
+        ctx.fillRect(vf.x + vf.w, vf.y, W - (vf.x + vf.w), vf.h);
+
+        // Out-of-focus optical blur haze inside the viewfinder when target is too far (clears up as it approaches!)
+        if (blur > 0.04) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(18, 26, 40, ' + (blur * 0.34).toFixed(2) + ')';
+          ctx.fillRect(vf.x + 1, vf.y + 1, vf.w - 2, vf.h - 2);
+          // Defocus bokeh / horizontal lens blur bands that dissolve as focus sharpens
+          const bandCount = Math.ceil(blur * 10);
+          ctx.fillStyle = 'rgba(143, 168, 214, ' + (blur * 0.14).toFixed(2) + ')';
+          for (let i = 0; i < bandCount; i++) {
+            const by = vf.y + 4 + ((i * 11 + Math.round(time * 24)) % (vf.h - 10));
+            ctx.fillRect(vf.x + 3, by, vf.w - 6, 2);
+          }
+          ctx.restore();
+        }
+
+        // Clean classic viewfinder border (no modern AF brackets)
+        ctx.strokeStyle = PAL.amberDim;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(vf.x, vf.y, vf.w, vf.h);
+
+        // Single physical flash ready LED dot in top-right corner of viewfinder
+        ctx.fillStyle = ready ? PAL.quartzGreen : PAL.dangerRed;
+        ctx.fillRect(vf.x + vf.w - 8, vf.y + 5, 3, 3);
       }
-
-      // Clean classic viewfinder border (no modern AF brackets)
-      ctx.strokeStyle = PAL.amberDim;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(vf.x, vf.y, vf.w, vf.h);
-
-      // Single physical flash ready LED dot in top-right corner of viewfinder
-      ctx.fillStyle = ready ? PAL.quartzGreen : PAL.dangerRed;
-      ctx.fillRect(vf.x + vf.w - 8, vf.y + 5, 3, 3);
     }
 
     // Glass Flash Reflection Glare (1s whiteout blindness)
@@ -1764,6 +1900,15 @@
           ctx.fillRect(0, H - borderH, W, borderH);
         }
       }
+    }
+
+    if ((cockpit.survivalBannerTimer || 0) > 0) {
+      ctx.fillStyle = 'rgba(7, 8, 13, 0.88)';
+      ctx.fillRect(6, 20, 308, 16);
+      ctx.strokeStyle = PAL.quartzGreen;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(6, 20, 308, 16);
+      text(ctx, 'EVIDENCE SECURED — CAMERA DOWN! USE FLASHLIGHT [SHIFT+SPACE] UNTIL 05:00 AM', W / 2, 25, PAL.quartzGreen, 6, 'center');
     }
   }
 

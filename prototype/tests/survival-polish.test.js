@@ -188,3 +188,66 @@ test('SURVIVAL banner timer initializes to 3.5s, counts down, and surviving unti
   assert.ok(s.events.some((e) => e.type === 'DAWN_CHIME'));
 });
 
+function makeMockCtx() {
+  const calls = [];
+  return {
+    calls,
+    canvas: { width: 320, height: 240 },
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    font: '',
+    textAlign: 'left',
+    textBaseline: 'top',
+    globalAlpha: 1,
+    imageSmoothingEnabled: false,
+    setTransform() {},
+    save() { calls.push({ op: 'save' }); },
+    restore() { calls.push({ op: 'restore' }); },
+    fillRect(x, y, w, h) { calls.push({ op: 'fillRect', x, y, w, h, fillStyle: this.fillStyle, alpha: this.globalAlpha }); },
+    strokeRect(x, y, w, h) { calls.push({ op: 'strokeRect', x, y, w, h, strokeStyle: this.strokeStyle }); },
+    fillText(str, x, y) { calls.push({ op: 'fillText', str, x, y, fillStyle: this.fillStyle }); },
+    beginPath() { calls.push({ op: 'beginPath' }); },
+    closePath() { calls.push({ op: 'closePath' }); },
+    moveTo(x, y) { calls.push({ op: 'moveTo', x, y }); },
+    lineTo(x, y) { calls.push({ op: 'lineTo', x, y }); },
+    arc(x, y, r, a0, a1) { calls.push({ op: 'arc', x, y, r, a0, a1 }); },
+    fill() { calls.push({ op: 'fill', fillStyle: this.fillStyle, alpha: this.globalAlpha }); },
+    stroke() { calls.push({ op: 'stroke', strokeStyle: this.strokeStyle }); },
+  };
+}
+
+test('SURVIVAL renderer: unlit creature draws only red eyes (no creatureRim body highlight), flashlight beam illuminates body and pale face at <= 0.42 with ZERO red warning border', () => {
+  const { C, R } = loadHtmlModules();
+  const s = C.createGame(C.makeConfig(), 401);
+  C.startNight(s, 1);
+  s.night.subPhase = 'SURVIVAL';
+  s.cockpit.toolMode = 'FLASHLIGHT';
+  s.cockpit.lightningFlash = 0;
+
+  const c = s.creatures[0];
+  c.dir = 'FRONT';
+  c.dist = 0.36; // Inside flashlight effective range (<= 0.42)
+  c.offsetX = 0;
+  s.cockpit.panX = 160;
+
+  // 1. Flashlight OFF (vfActive = false): only red eyes in pitch black, no pale sclera/teeth body reveal
+  s.cockpit.vfActive = false;
+  const ctxOff = makeMockCtx();
+  R.draw(ctxOff, s);
+  const paleCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
+  assert.equal(paleCallsOff.length, 0, 'unlit creature in SURVIVAL must not reveal pale face/hands without flashlight');
+
+  // 2. Flashlight ON (vfActive = true) at dist 0.36 (<= 0.42): reveals pale features inside circular beam, NO red strokeRect warning
+  s.cockpit.vfActive = true;
+  const ctxOn = makeMockCtx();
+  R.draw(ctxOn, s);
+  const paleCallsOn = ctxOn.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
+  assert.ok(paleCallsOn.length > 0, 'flashlight beam at close range (<= 0.42) must illuminate pale sclera/teeth/hands');
+
+  const redBorderCalls = ctxOn.calls.filter(
+    (k) => (k.op === 'strokeRect' || k.op === 'stroke') && (k.strokeStyle === R.PAL.dangerRed || k.strokeStyle === R.PAL.eyeRed)
+  );
+  assert.equal(redBorderCalls.length, 0, 'must NEVER draw a red warning border/frame in SURVIVAL flashlight mode');
+});
+
