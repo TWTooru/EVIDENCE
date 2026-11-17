@@ -11,47 +11,47 @@ html,body{height:100%;background:#000;overflow:hidden;font-family:"Microsoft Jhe
 .rain{position:absolute;inset:0;background-image:repeating-linear-gradient(105deg,rgba(140,175,235,.07) 0 1px,transparent 1px 16px);animation:rain .55s linear infinite;pointer-events:none}
 @keyframes rain{to{background-position:-32px 64px}}
 .scanlines{position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 4px);pointer-events:none}
-.slide{position:absolute;inset:0;padding:54px 82px;display:none;flex-direction:column}
+.slide{position:absolute;inset:0;padding:46px 76px;display:none;flex-direction:column}
 .slide.on{display:flex;animation:in .35s ease}
 @keyframes in{from{opacity:0;transform:translateY(10px)}}
-h1{font-size:72px;letter-spacing:4px;color:#ffb000;text-shadow:0 0 24px rgba(255,176,0,.45)}
-h2{font-size:40px;margin-bottom:24px;color:#fff;border-left:8px solid #ffb000;padding-left:18px;display:flex;align-items:center;gap:14px}
-h2 .pill{font-size:18px;background:#e62e2e;color:#fff;padding:4px 12px;border-radius:4px;letter-spacing:1px}
-h3{font-size:25px;color:#ffb000;margin-bottom:10px}
-p,li{font-size:23px;line-height:1.52}
+h1{font-size:68px;letter-spacing:4px;color:#ffb000;text-shadow:0 0 24px rgba(255,176,0,.45)}
+h2{font-size:36px;margin-bottom:18px;color:#fff;border-left:8px solid #ffb000;padding-left:16px;display:flex;align-items:center;gap:14px}
+h2 .pill{font-size:16px;background:#e62e2e;color:#fff;padding:4px 11px;border-radius:4px;letter-spacing:1px}
+h3{font-size:23px;color:#ffb000;margin-bottom:8px}
+p,li{font-size:20px;line-height:1.48}
 ul{list-style:none}
-li{padding-left:26px;position:relative;margin-bottom:10px}
-li:before{content:"▶";position:absolute;left:0;color:#ff3b4a;font-size:16px;top:6px}
-.sub{font-size:23px;color:#9aa8c8;margin-top:14px}
+li{padding-left:24px;position:relative;margin-bottom:8px}
+li:before{content:"▶";position:absolute;left:0;color:#ff3b4a;font-size:15px;top:5px}
+.sub{font-size:21px;color:#9aa8c8;margin-top:10px}
 .center{justify-content:center;align-items:center;text-align:center}
-.quote{font-size:34px;line-height:1.62;max-width:1040px}
+.quote{font-size:30px;line-height:1.55;max-width:1040px}
 .quote b{color:#ffb000}
 .quote em{color:#ff3b4a;font-style:normal;font-weight:700}
-.grid{display:grid;gap:22px;flex:1;align-content:start}
+.grid{display:grid;gap:18px;flex:1;align-content:start}
 .g2{grid-template-columns:1fr 1fr}
 .g3{grid-template-columns:repeat(3,1fr)}
 .g4{grid-template-columns:repeat(4,1fr)}
-.card{background:rgba(16,14,22,.82);border:2px solid rgba(255,176,0,.25);border-radius:6px;padding:22px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.card{background:rgba(16,14,22,.82);border:2px solid rgba(255,176,0,.25);border-radius:6px;padding:18px 20px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .card.red{border-color:rgba(230,46,46,.55);background:rgba(36,12,18,.75)}
 .card.green{border-color:rgba(56,217,115,.55);background:rgba(12,32,22,.75)}
-.card p,.card li{font-size:21px}
-.big{font-size:46px;font-weight:800;color:#ffb000;font-family:"Courier New",monospace;margin-bottom:6px}
-.tag{display:inline-block;padding:3px 11px;border-radius:4px;font-weight:700;font-size:18px;font-family:"Courier New",monospace}
+.card p,.card li{font-size:19px}
+.big{font-size:38px;font-weight:800;color:#ffb000;font-family:"Courier New",monospace;margin-bottom:4px}
+.tag{display:inline-block;padding:2px 9px;border-radius:4px;font-weight:700;font-size:16px;font-family:"Courier New",monospace}
 .tag.del{background:#5a1e28;color:#ff9aa2}
 .tag.keep{background:#124d2e;color:#38d973}
 .tag.warn{background:#694800;color:#ffb000}
-table{width:100%;border-collapse:collapse;font-size:21px}
-th,td{padding:12px 15px;border-bottom:1px solid rgba(255,255,255,.15);text-align:left;vertical-align:top}
-th{color:#ffb000;font-size:22px;background:rgba(255,176,0,.08)}
-.flow{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:nowrap;margin:18px 0}
-.node{background:#16141a;border:2px solid #ffb000;padding:16px 18px;font-size:21px;border-radius:6px;text-align:center;flex:1}
+table{width:100%;border-collapse:collapse;font-size:18px}
+th,td{padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.15);text-align:left;vertical-align:top}
+th{color:#ffb000;font-size:19px;background:rgba(255,176,0,.08)}
+.flow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:nowrap;margin:14px 0}
+.node{background:#16141a;border:2px solid #ffb000;padding:12px 14px;font-size:18px;border-radius:6px;text-align:center;flex:1}
 .node.danger{border-color:#ff3b4a;background:#261019}
 .node.ok{border-color:#38d973;background:#0f261a}
-.arr{font-size:30px;color:#ffb000;font-weight:bold}
-code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14);color:#ffd269;padding:2px 7px;border-radius:4px;font-size:.9em}
+.arr{font-size:26px;color:#ffb000;font-weight:bold}
+code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14);color:#ffd269;padding:2px 6px;border-radius:4px;font-size:.9em}
 #bar{position:absolute;left:0;bottom:0;height:6px;background:linear-gradient(90deg,#ffb000,#ff3b4a);transition:width .3s}
-#num{position:absolute;right:30px;bottom:16px;font-size:19px;color:#8fa8d6;font-family:"Courier New",monospace}
-.foot{position:absolute;left:82px;bottom:16px;font-size:17px;color:#6a7898;font-family:"Courier New",monospace}
+#num{position:absolute;right:30px;bottom:14px;font-size:18px;color:#8fa8d6;font-family:"Courier New",monospace}
+.foot{position:absolute;left:76px;bottom:14px;font-size:16px;color:#6a7898;font-family:"Courier New",monospace}
 </style>
 </head>
 <body>
@@ -61,32 +61,41 @@ code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14)
 
 <!-- Slide 1: Cover -->
 <section class="slide center">
-  <p class="sub" style="margin:0 0 18px;letter-spacing:3px;color:#ff3b4a;font-weight:bold">16-BIT WAR 時期</p>
+  <p class="sub" style="margin:0 0 14px;letter-spacing:3px;color:#ff3b4a;font-weight:bold">16-BIT 心理生存恐怖 ✕ 細節打磨與優化</p>
   <h1>EVIDENCE 1989</h1>
+  <p class="sub" style="font-size:24px;color:#ffb000;letter-spacing:2px;margin-top:4px">BLACK RAIN</p>
 
-  <p class="quote" style="font-size:28px;max-width:920px"><br><b>「深掘核心的玩法——『123木頭人』本能恐懼。」</b></p>
-
+  <p class="quote" style="font-size:28px;max-width:980px;margin-top:24px">
+    <b>「破除 15 秒速通——前半夜冒險抓拍取證，後半夜極暗手電筒死守！」</b><br>
+    <span style="font-size:21px;color:#9aa8c8">深掘「123 木頭人」本能恐懼，以極簡道具創造雙階段極限心理拉扯</span>
+  </p>
+  <p class="sub" style="margin-top:20px;color:#8fa8d6;font-size:19px">報告人：林天友 ｜ 作品優化與打磨週報</p>
 </section>
 
 <!-- Slide 2: Teacher's Feedback & Subtraction Audit -->
 <section class="slide">
-  <h2><span class="pill">FEEDBACK</span> 老師反饋與設計迭代：從抽象限制到直覺壓迫</h2>
+  <h2><span class="pill">FEEDBACK</span> 試玩反饋與本週優化：破除速通漏洞，加深生存拉扯</h2>
   <table>
-    <tr><th style="width:28%">原設計痛點 / 老師反饋</th><th style="width:34%">問題分析</th><th>本週改版方案</th></tr>
+    <tr><th style="width:24%">痛點回饋</th><th style="width:34%">問題根源分析</th><th>本週打磨與最佳化方案</th></tr>
     <tr>
-      <td><span class="tag del">光學裂像太抽象</span></td>
-      <td>單眼相機上下裂像合攏需要額外理解成本，不夠直覺。</td>
-      <td><span class="tag keep">觀景窗「失焦模糊 → 逼近變清晰」</span><br>移除多餘對焦框 UI；舉起相機時觀景窗內黑影模糊重影，<b>隨黑影逼近鏡頭逐漸變清晰</b>，進入拍攝距離瞬間銳利顯影。</td>
+      <td><span class="tag del">第一二晚 15 秒速通</span></td>
+      <td>長按 <code>[SHIFT]</code> 舉相機零風險，遠處黑影自動置中直線送頭；缺乏木頭人直視博弈。</td>
+      <td><span class="tag keep">前半夜防無腦誘敵機制</span><br>遠距舉相機黑影警覺左右游移、移速降為 <code>0.28x</code>；必須先用<b>肉眼直視定格逼入蓄力姿態</b>，再抓準時機舉鏡誘拍。</td>
     </tr>
     <tr>
-      <td><span class="tag del">生理眨眼像強加的枷鎖</span></td>
-      <td>單純因為「眼睛酸澀強制閉眼」會讓玩家覺得是系統刻意綁手綁腳。</td>
-      <td><span class="tag keep">紅眼「精神侵蝕斷訊 ＋ 撞窗換位（三次必死）」</span><br>直視紅眼超過極限會觸發<b>精神斷訊黑屏</b>：黑影猛撞當前玻璃留下<b>跨夜蜘蛛網裂痕並轉移至其他窗戶</b>，累積 <b>3 次斷訊直接破窗必死</b>。</td>
+      <td><span class="tag del">拍滿照片瞬間天亮</span></td>
+      <td>達成照片目標立刻跳結算，缺乏撐過漫長黑夜的心理壓迫感與生存時間拉扯。</td>
+      <td><span class="tag keep">前半夜取證 ✕ 後半夜手電筒求生</span><br>拍滿照片暴風雨驟暗，時鐘推進至 <b>03:00 AM</b>，放下相機改持<b>手電筒死守至 05:00 AM</b>。</td>
     </tr>
     <tr>
-      <td><span class="tag del">看 A 窗完全看不到 B 窗</span><br><span class="tag del">方向盤、後照鏡</span></td>
-      <td>一般人眼看 A 窗時，眼角餘光應能瞄到 B 窗；且空間不應被汽車綁死。</td>
-      <td><span class="tag keep">樹林守望台 ＋ 眼角餘光 ＋ 跨夜裂痕</span><br>移除方向盤與後照鏡；看 A 窗時<b>眼角餘光能瞄到 B 窗黑影正在偷動</b>；保留窗柱與玻璃以呈現<b>跨夜保留的蜘蛛網裂痕</b>。</td>
+      <td><span class="tag warn">導師原則：不做多餘加法</span></td>
+      <td>加入新武器或複雜資源管理會稀釋「123 木頭人直視定格」的核心純粹性。</td>
+      <td><span class="tag keep">共用鍵位 ＋ 只加一件道具</span><br>全程維持 <code>[A/D]</code> 轉頭、<code>[SHIFT]</code> 舉起道具、<code>[SPACE]</code> 爆發，手電筒與相機無縫替換，零新按鍵負擔。</td>
+    </tr>
+    <tr>
+      <td><span class="tag del">依賴 UI 框提示時機</span></td>
+      <td>現代紅綠對焦框破壞復古沉浸感。</td>
+      <td><span class="tag keep">100% 純視覺判讀（零紅框警示）</span><br>相機失焦模糊收攏顯影；手電筒暗處只見紅眼，貼窗照出<b>慘白眼白、裂齒與雙手瞬間爆閃</b>！</td>
     </tr>
   </table>
 </section>
@@ -94,7 +103,7 @@ code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14)
 <!-- Slide 3: Pillar 1 -->
 <section class="slide">
   <h2><span class="pill">PILLAR 01</span> 正視凍結 vs. 眼角餘光蠢動 </h2>
-  <p style="margin-bottom:20px">看 A 窗時，窗柱外側的<b>「眼角餘光」能瞄到隔壁 B 窗</b>——正視窗 100% 凍結，但餘光裡的黑影正一步步逼近！</p>
+  <p style="margin-bottom:16px">看 A 窗時，窗柱外側的<b>「眼角餘光」能瞄到隔壁 B 窗</b>——正視窗 100% 凍結，但餘光裡的黑影正一步步逼近！</p>
   <div class="grid g3">
     <div class="card">
       <div class="big">WAIT</div>
@@ -125,20 +134,21 @@ code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14)
 <!-- Slide 4: Pillar 2 -->
 <section class="slide">
   <h2><span class="pill">PILLAR 02</span> 為什麼不能一直死盯？（精神侵蝕 ＆ 跨夜蜘蛛網裂痕）</h2>
-  <p style="margin-bottom:18px">移除方向盤與後照鏡，將空間提純為<b>「樹林守望台」</b>；保留窗柱與玻璃，讓<b>蜘蛛網裂痕成為跨夜累積的視野枷鎖</b>：</p>
+  <p style="margin-bottom:16px">移除方向盤與後照鏡，將空間提純為<b>「樹林守望台」</b>；保留窗柱與玻璃，讓<b>蜘蛛網裂痕成為跨夜累積的視野枷鎖</b>：</p>
   <div class="grid g2">
     <div class="card">
-      <h3>紅眼精神侵蝕（取代生理眨眼）</h3>
+      <h3>紅眼精神侵蝕（合理化凝視限制）</h3>
       <ul>
         <li><b>合理化限制：</b>不是人類肉眼無故乾澀，而是<b>「直視黑影會遭到牠的紅眼精神反噬」</b>。</li>
         <li>盯視越久，畫面浮現<b>紅黑訊號撕裂（VHS Glitch）、斷頸幻覺與劇烈耳鳴</b>，說服玩家「不能無止盡直視牠」。</li>
+        <li>轉開視線即可逐漸緩解精神侵蝕值。</li>
       </ul>
     </div>
     <div class="card red">
       <h3>侵蝕滿載：撞窗裂痕 ＋ 轉移換窗（三次必死）</h3>
       <ul>
-        <li><b>第 1、2 次精神斷訊：</b>黑屏 0.22 秒期間，黑影猛撞當前玻璃<b>留下跨夜蜘蛛網裂痕</b>，並<b>趁機轉移至其他窗戶（不在原視窗內）</b>，逼迫玩家重新轉頭索敵。</li>
-        <li><b>第 3 次精神斷訊（必死）：</b>再次盯到侵蝕滿載時，黑影直接<b>撞碎守望台玻璃破窗而入，玩家立即死亡</b>。</li>
+        <li><b>第 1、2 次精神斷訊：</b>黑屏 0.22 秒期間，黑影猛撞當前玻璃<b>留下跨夜蜘蛛網裂痕</b>，並<b>趁機轉移至其他窗戶</b>，逼迫玩家重新轉頭索敵。</li>
+        <li><b>第 3 次精神斷訊（必死）：</b>累積第 3 次侵蝕滿載時，黑影直接<b>撞碎守望台玻璃破窗而入，玩家立即死亡</b>。</li>
       </ul>
     </div>
   </div>
@@ -146,54 +156,117 @@ code{font-family:"Courier New",Consolas,monospace;background:rgba(255,176,0,.14)
 
 <!-- Slide 5: Pillar 3 -->
 <section class="slide">
-  <h2><span class="pill">PILLAR 03</span> 觀景窗「失焦模糊 → 逼近變清晰」純粹視覺判讀</h2>
-  <p style="margin-bottom:18px">回應老師反饋：捨棄抽象光學裂像與多餘現代對焦框，完全透過<b>「觀景窗內黑影由模糊重影隨逼近逐漸變得清晰銳利」</b>來判讀快門時機：</p>
+  <h2><span class="pill">PILLAR 03</span> 前半夜【相機取證】：破除速通，光學由糊變清抓拍</h2>
+  <p style="margin-bottom:12px">第一階段以收集足夠照片證據為目標，強調<b>「直視凍結 ↔ 舉機遮眼誘敵」</b>的心理博弈：</p>
   <div class="flow">
-    <div class="node">1.肉眼直視<br><b>怪物 100% 凍結在遠處</b><br>（距離太遠無法取證）</div>
+    <div class="node">1. 肉眼直視鎖定<br><b>黑影 100% 凍結</b><br>逼入 <code>COIL</code> 蓄力姿態</div>
     <div class="arr">→</div>
-    <div class="node danger">2.按住 <code>[SHIFT]</code> 舉起相機<br><b>觀景窗內初期「失焦模糊」</b><br>（遮住肉眼，黑影朝鏡頭逼近並<b>逐漸變清晰</b>）</div>
+    <div class="node danger">2. 按住 <code>[SHIFT]</code> 舉相機<br><b>初期觀景窗內「失焦模糊」</b><br>相機遮眼，黑影直衝鏡頭並<b>由糊變清</b></div>
     <div class="arr">→</div>
-    <div class="node ok">3.黑影輪廓與五官清晰銳利<br><b>在貼臉瞬間按下 <code>[SPACE]</code> 閃光快門！</b><br>（拍下清晰證據並強光震退黑影）</div>
+    <div class="node ok">3. 臉部特徵清晰銳利<br><b>貼窗瞬間按 <code>[SPACE]</code> 快門！</b><br>拍下 EVIDENCE 證據並閃光震退</div>
   </div>
-  <div class="grid g2" style="margin-top:16px">
+  <div class="grid g2" style="margin-top:12px">
     <div class="card">
-      <h3>失焦重影 → 逼近逐漸收攏</h3>
-      <p>剛舉起相機時，遠處黑影在觀景窗內呈現<b>失焦霧化與像素重影</b>；隨著黑影一步步逼近鏡頭，重影與模糊帶逐漸收攏消散，直覺傳達距離變化。</p>
+      <h3>防無腦長按誘敵（Anti-Cheese）</h3>
+      <p>遠距離（<code>WAIT</code>）若玩家一直偷懶舉相機，黑影會警戒<b>左右橫移且移速大降為 0.28x</b>；唯有先放開肉眼直視逼出 <code>COIL</code>，舉相機時才會果斷直線突進。</p>
     </div>
     <div class="card green">
-      <h3>零 UI 干擾的純粹張力</h3>
-      <p>不依賴現代手機對焦框，當黑影踏入最佳拍攝距離時，<b>觀景窗內的模糊重影完全消失，慘白眼白與裂嘴瞬間 100% 清晰顯影</b>，與閃光燈就緒綠燈共同構成最純粹的拍攝回饋！</p>
+      <h3>零 UI 干擾的光學焦距回饋</h3>
+      <p>觀景窗不顯示現代手機綠框。遠距為色散模糊帶，當黑影衝至 <code>dist &lt;= 0.34</code> 有效距離時，<b>眼白、裂齒瞬間 100% 銳利顯影</b>，帶來最純粹的抓拍反饋。</p>
     </div>
   </div>
 </section>
 
-<!-- Slide 6: 3 Nights Spatial Escalation & Summary -->
+<!-- Slide 6: Pillar 4 -->
 <section class="slide">
-  <h2><span class="pill">PROGRESSION</span> 三個夜晚：蜘蛛網裂痕跨夜保留，視野逐步受限</h2>
-  <div class="grid g3" style="margin-bottom:22px">
+  <h2><span class="pill">PILLAR 04</span> 後半夜【手電筒求生】：暗處只見紅眼，聚光爆閃死守</h2>
+  <p style="margin-bottom:16px">拍滿當晚所需照片後<b>放下相機置於左窗台</b>，暴風雨驟暗，切入 <b>03:00 AM ~ 05:00 AM</b> 的生死存亡戰：</p>
+  <div class="grid g3">
+    <div class="card">
+      <div class="big">RED EYES</div>
+      <h3>1. 暗處只見紅眼</h3>
+      <ul>
+        <li>窗外松林陷入伸手不見五指的<b>極致全黑</b>。</li>
+        <li>肉眼與眼角餘光<b>只看得到閃爍紅眼與貼窗寒氣</b>。</li>
+        <li>正視紅眼依然維持木頭人凍結與精神侵蝕規則！</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="big">BEAM</div>
+      <h3>2. 聚光照亮身形</h3>
+      <ul>
+        <li>按住 <code>[SHIFT]</code> 舉手電筒，投射<b>16-bit 圓形聚光束</b>。</li>
+        <li>光束照中怪物時顯現其身形，但強光刺激怪物<b>解除定格、直撲光源</b>！</li>
+        <li>單窗精確照耀，考驗多窗巡視。</li>
+      </ul>
+    </div>
+    <div class="card red">
+      <div class="big" style="color:#ff3b4a">STROBE</div>
+      <h3>3. 貼窗強光爆閃</h3>
+      <ul>
+        <li><b>純視覺判讀（零紅框）</b>：衝進有效距離（<code>&lt;= 0.42</code>）瞬間，強光照亮慘白眼白、裂嘴與雙手！</li>
+        <li>按 <code>[SPACE]</code> 釋放強光爆閃震退換窗；若太遠誤按只會輕微頓挫並浪費電容冷卻！</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 7: Progression -->
+<section class="slide">
+  <h2><span class="pill">PROGRESSION</span> 三個夜晚：雙階段循環 ✕ 蜘蛛網裂痕跨夜枷鎖</h2>
+  <div class="grid g3" style="margin-bottom:18px">
     <div class="card">
       <div class="big">NIGHT 1</div>
-      <h3>初次目擊（需拍 2 張清晰證據）</h3>
-      <p>1 隻獵食者在守望台外徘徊（4 張底片中需成功拍下 <b>2 張清晰證據</b>）。<br>體驗「正視凍結、餘光瞄見隔壁窗蠢動、舉相機由糊變清抓拍」的核心循環。</p>
+      <h3>初次目擊 ＆ 暴雨初臨</h3>
+      <ul>
+        <li><b>前半夜：</b>4 張底片需拍滿 <b>2 張清晰證據</b>。</li>
+        <li><b>後半夜：</b>03:00 AM 轉入手電筒極暗求生，死守 1 隻怪物至 05:00 AM。</li>
+        <li>新手建立直視、抓拍、手電筒爆閃的心智模型。</li>
+      </ul>
     </div>
     <div class="card">
       <div class="big">NIGHT 2</div>
-      <h3>裂痕遺留 ＆ 暴雨包抄（需拍 3 張）</h3>
-      <p><b>前一晚被撞出的蜘蛛網裂痕保留在窗上限制視野</b>，黑影換窗包抄速度加快，且 4 張底片中必須拍下 <b>3 張清晰證據</b>（僅容許 1 次失誤）。</p>
+      <h3>裂痕遺留 ＆ 步步緊逼</h3>
+      <ul>
+        <li><b>前一晚被撞出的蜘蛛網裂痕跨夜保留</b>，窗面碎裂遮蔽視線！</li>
+        <li><b>前半夜：</b>4 張底片需拍滿 <b>3 張清晰證據</b>（容錯率極低）。</li>
+        <li><b>後半夜：</b>怪物包抄速度加快，電容回充空窗更顯致命。</li>
+      </ul>
     </div>
     <div class="card red">
       <div class="big" style="color:#ff3b4a">NIGHT 3</div>
-      <h3>兩隻獵食者 ＆ 滿窗裂網（需拍 3 張）</h3>
-      <p><b>2 隻獵食者同時出沒</b>（正視釘死 A 窗時，眼角餘光看見 B 窗黑影正在逼近），加上累積兩晚的蜘蛛網裂痕與 <b>3 張證據需求</b>將壓迫感推向極限。</p>
+      <h3>雙重獵食 ＆ 滿窗碎裂</h3>
+      <ul>
+        <li><b>2 隻獵食者同時出沒</b>！正視定格 A 窗紅眼時，眼角餘光看見 B 窗紅眼步步逼近。</li>
+        <li>累積兩晚的蛛網裂痕切割全景，手電筒單窗判定考驗極限左右巡視與爆閃節奏！</li>
+      </ul>
     </div>
   </div>
-  <div class="card green" style="text-align:center;padding:18px">
-    <p style="font-size:24px"><b>謝謝聆聽</b></p>
+</section>
+
+<!-- Slide 8: Summary -->
+<section class="slide center">
+  <h2><span class="pill">SUMMARY</span> 減法提純 ✕ 深掘核心</h2>
+  <div class="grid g3" style="max-width:1100px;margin:24px auto;text-align:left">
+    <div class="card">
+      <h3>一個封閉空間</h3>
+      <p>捨棄繁複汽車儀表與開關，純粹化為<b>樹林守望台三面木框玻璃窗</b>，眼角餘光與跨夜裂痕構成天然空間框架。</p>
+    </div>
+    <div class="card">
+      <h3>兩套互補工具</h3>
+      <p><b>前半夜相機（取證、誘敵逼近）</b> ✕ <b>後半夜手電筒（求生、聚光逼近）</b>，在同一晚形成完美的目標轉換與節奏起伏。</p>
+    </div>
+    <div class="card green">
+      <h3>零學習成本鍵位</h3>
+      <p>全程僅靠 <code>[A/D]</code> 轉頭、<code>[SHIFT]</code> 舉道具、<code>[SPACE]</code> 閃光，純靠怪物五官銳化與顯影作為視覺反饋，沉浸感滿點！</p>
+    </div>
   </div>
+  <p class="quote" style="font-size:32px;margin-top:20px"><b>謝謝聆聽 ｜ 歡迎體驗試玩</b></p>
 </section>
 
 <div id="num"></div>
 <div id="bar"></div>
+<div class="foot">EVIDENCE 1989: BLACK RAIN ｜ [← / → / SPACE] 換頁 ｜ [F] 全螢幕</div>
 </div>
 
 <script>
