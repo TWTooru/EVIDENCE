@@ -42,8 +42,8 @@
       width: min(800px, 95vw, calc(76vh * (4 / 3)));
       aspect-ratio: 4 / 3;
       image-rendering: pixelated;
-      border: 4px solid #26222b;
-      box-shadow: 0 0 32px rgba(255, 34, 51, 0.2), 0 0 12px rgba(0, 0, 0, 0.9);
+      border: 4px solid #221f28;
+      box-shadow: 0 0 32px rgba(255, 34, 51, 0.16), 0 0 12px rgba(0, 0, 0, 0.92);
       background: #07080d;
       display: block;
       cursor: crosshair;
@@ -55,10 +55,10 @@
       justify-content: center;
     }
     .deck-btn {
-      background: #1c1920;
+      background: #16141a;
       color: #ffb000;
-      border: 1px solid #443b4f;
-      padding: 6px 12px;
+      border: 1px solid #3c3447;
+      padding: 6px 14px;
       font-family: inherit;
       font-size: 12px;
       font-weight: bold;
@@ -73,35 +73,34 @@
       font-size: 12px;
       color: #8fa8d6;
       text-align: center;
-      line-height: 1.6;
-      max-width: 800px;
+      line-height: 1.65;
+      max-width: 780px;
     }
     .help span { color: #ffb000; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="header-bar">
-    <span class="badge">16-BIT WAR</span>
+    <span class="badge">16-BIT</span>
     <span>EVIDENCE 1989: BLACK RAIN</span>
   </div>
 
   <canvas id="screen" width="1280" height="960"></canvas>
 
   <div class="quick-deck">
-    <button class="deck-btn" id="btnWipers">[1] 雨刷 WIPERS</button>
-    <button class="deck-btn" id="btnLights">[2] 車前大燈 HEADLIGHTS</button>
-    <button class="deck-btn" id="btnRoof">[W] 抬頭看天窗 ROOF</button>
-    <button class="deck-btn" id="btnAim">[SHIFT] 舉起相機 AIM</button>
-    <button class="deck-btn" id="btnShoot">[SPACE] 快門閃光 SHOOT</button>
+    <button class="deck-btn" id="btnLeft">[◀ A] 左轉頭</button>
+    <button class="deck-btn" id="btnRight">[D ▶] 右轉頭</button>
+    <button class="deck-btn" id="btnAim">[SHIFT] 舉起相機（遮住肉眼）</button>
+    <button class="deck-btn" id="btnShoot">[SPACE] 快門閃光</button>
   </div>
 
   <div class="help">
-    [<span>A / D 或 ← / →</span>] 左右轉頭環顧車窗　[<span>W / ↑</span>] 抬頭看天窗/後照鏡　[<span>1</span>] 雨刷開關　[<span>2</span>] 車前大燈<br>
-    [<span>按住 SHIFT 或 J / 右鍵</span>] 舉起相機對焦　[<span>SPACE 或 K / 左鍵</span>] 扣下快門引爆閃光燈
+    [<span>A / D 或 ← / →</span>] 轉頭巡視守望台窗戶（<b>正眼直視＝100% 凍結黑影</b>；但<b>盯超過時間侵蝕滿載會撞裂玻璃並換窗，累積 3 次斷訊必死</b>！）<br>
+    [<span>按住 SHIFT / J / 右鍵</span>] 舉起相機遮眼誘敵（<b>觀景窗由失焦模糊隨黑影逼近逐漸變清晰</b>）　[<span>畫面清晰時按 SPACE / K / 左鍵</span>] 引爆閃光快門！
   </div>
 
   <script>
-/* EVIDENCE 1989: BLACK RAIN — 16-bit Core Simulation Engine (zero DOM dependencies). */
+/* EVIDENCE 1989: BLACK RAIN — Pure 16-bit "123 Wooden Man" Core Engine (Lookout Cabin Spatial Frame, Peripheral Vision & Optical Focus). */
 (function (root) {
   'use strict';
 
@@ -110,31 +109,40 @@
   const WORLD_W = 640;
   const MAX_PAN_X = WORLD_W - SCREEN_W; // 320
 
-  // World X centers for each directional zone
+  // World X centers for the 3 lookout cabin windows (classic proportions)
   const DIR_WORLD_X = {
     LEFT: 95,
     FRONT: 320,
     RIGHT: 545,
-    ROOF: 320,
   };
 
+  // Structural window pillars (mullions) dividing LEFT / FRONT / RIGHT panes
+  const PILLAR_WORLD_X = {
+    LEFT: 160,
+    RIGHT: 468,
+  };
+
+  const DIRECT_GAZE_MIN_X = 24;
+  const DIRECT_GAZE_MAX_X = SCREEN_W - 24; // 296
+
   const DEFAULTS = {
-    panSpeed: 260,          // Horizontal head-turn speed (px/s)
-    nightDuration: 90,      // Seconds per night (00:00 -> 05:00 AM)
+    panSpeed: 280,          // Horizontal head-turn speed (px/s)
+    nightDuration: 75,      // Seconds per night (00:00 -> 05:00 AM)
     film: 4,                // Film exposures per night
     chargeTime: 2.5,        // Flash capacitor recharge time (s)
     blindTime: 1.0,         // Glass reflection whiteout blindness (s)
-    approachSpeed: 0.055,   // Base creature approach rate (dist/s)
+    approachSpeed: 0.055,   // Base creature approach rate when unwatched (dist/s)
     retreatDist: 0.92,      // Creature distance after flash hit
-    rainRate: 0.11,         // Front windshield rain buildup per second
-    blurThreshold: 0.65,    // Rain blur above which front gaze is blocked
-    wiperDrain: 0.5,        // Battery %/s when wipers are ON
-    headlightDrain: 1.8,    // Battery %/s when headlights are ON
-    radioDrain: 0.1,        // Passive radio battery %/s
-    evidenceDist: 0.34,     // Max distance for EVIDENCE grade
+    evidenceDist: 0.34,     // Max distance for EVIDENCE grade (and 100% sharp optical focus)
     suspiciousDist: 0.65,   // Max distance for SUSPICIOUS grade
-    vfW: 120,               // Camera viewfinder width (px)
-    vfH: 96,                // Camera viewfinder height (px)
+    vfW: 120,               // Camera optical viewfinder width (px)
+    vfH: 96,                // Camera optical viewfinder height (px)
+    maxStare: 2.8,          // Base direct-gaze duration (s) before psychic signal overload blackout
+    blinkDuration: 0.22,    // Psychic optic blackout duration (s)
+    waitMult: 0.55,         // Deceptive slow stalk multiplier in WAIT pose
+    coilMult: 1.65,         // Explosive lunge multiplier in COIL pose
+    lungeMult: 1.50,        // Point-blank lunge multiplier in LUNGE pose
+    lungeDist: 0.36,        // Distance threshold where creature enters LUNGE pose
     debug: 0,
   };
 
@@ -169,41 +177,44 @@
     if (n === 1) {
       return {
         number: 1,
-        title: 'NIGHT 1: THE STALKER',
-        subtitle: '1989.11.03 - OREGON TIMBER ROAD',
+        title: 'NIGHT 1: FIRST SIGHTING',
+        subtitle: 'DIRECT GAZE FREEZES IT. WATCH YOUR PERIPHERAL WINDOWS.',
         dirs: ['LEFT', 'FRONT', 'RIGHT'],
         creatureCount: 1,
+        requiredEvidence: 2,
         approachMult: 1.0,
         rainMult: 1.0,
-        drainMult: 1.0,
-        startBattery: 100,
+        shiftMin: 4.5,
+        shiftSpan: 3.5,
         duration: cfg.nightDuration,
       };
     }
     if (n === 2) {
       return {
         number: 2,
-        title: 'NIGHT 2: THE DOWNPOUR',
-        subtitle: 'TORRENTIAL RAIN - WATCH THE ROOF',
-        dirs: ['LEFT', 'FRONT', 'RIGHT', 'ROOF'],
+        title: 'NIGHT 2: FRACTURED GLASS',
+        subtitle: 'SPIDERWEB CRACKS REMAIN. IT FLANKS IN YOUR PERIPHERY.',
+        dirs: ['LEFT', 'FRONT', 'RIGHT'],
         creatureCount: 1,
-        approachMult: 1.28,
-        rainMult: 1.8,
-        drainMult: 1.1,
-        startBattery: 100,
+        requiredEvidence: 3,
+        approachMult: 1.25,
+        rainMult: 1.45,
+        shiftMin: 3.2,
+        shiftSpan: 2.4,
         duration: cfg.nightDuration,
       };
     }
     return {
       number: 3,
-      title: 'NIGHT 3: BLACKOUT',
-      subtitle: 'FAILING BATTERY - DOUBLE SHADOWS',
-      dirs: ['LEFT', 'FRONT', 'RIGHT', 'ROOF'],
+      title: 'NIGHT 3: TWO IN THE DARK',
+      subtitle: 'TWO FIGURES. ONE IN YOUR GAZE, ONE IN YOUR PERIPHERY.',
+      dirs: ['LEFT', 'FRONT', 'RIGHT'],
       creatureCount: 2,
-      approachMult: 1.45,
-      rainMult: 2.0,
-      drainMult: 1.3,
-      startBattery: 75,
+      requiredEvidence: 3,
+      approachMult: 1.18,
+      rainMult: 1.85,
+      shiftMin: 3.8,
+      shiftSpan: 2.8,
       duration: cfg.nightDuration,
     };
   }
@@ -213,24 +224,10 @@
     return base + (c.offsetX || 0);
   }
 
-  function creatureScreenRect(c, panX, lookUp) {
+  function creatureScreenRect(c, panX) {
     const near = clamp(1 - c.dist, 0, 1);
     const worldX = creatureWorldPos(c);
     const screenX = worldX - panX;
-
-    if (c.dir === 'ROOF') {
-      const h = Math.round(24 + 76 * near);
-      const w = Math.round(h * 0.85);
-      const baseY = lookUp ? 84 : 26;
-      return {
-        x: Math.round(screenX - w / 2),
-        y: Math.round(baseY - h * 0.4),
-        w,
-        h,
-        eyeX: screenX,
-        eyeY: Math.round(baseY),
-      };
-    }
 
     const minH = 22;
     const maxH = 142;
@@ -238,7 +235,7 @@
     const w = Math.round(h * 0.42);
     const horizonY = 102;
     const feetNearY = 186;
-    const feetY = Math.round(horizonY + (feetNearY - horizonY) * near + (lookUp ? 28 : 0));
+    const feetY = Math.round(horizonY + (feetNearY - horizonY) * near);
     const x = Math.round(screenX - w / 2);
     const y = feetY - h;
     return {
@@ -248,35 +245,37 @@
       h,
       eyeX: screenX,
       eyeY: Math.round(y + h * 0.16),
+      pose: c.pose || 'WAIT',
     };
   }
 
-  function isCreatureGazed(c, state) {
+  // Checks if creature is within the direct central gaze cone of the currently watched window
+  function isCreatureInViewCone(c, state) {
     if (!c || !state) return false;
-    const { cockpit, camera, cfg } = state;
-    if (camera.blindTimer > 0) return false;
+    const { cockpit, camera } = state;
+    if (camera.blindTimer > 0 || cockpit.blinkTimer > 0) return false;
 
-    if (c.dir === 'ROOF') {
-      // Must be near center and looking up at the roof / rearview area
-      const centered = cockpit.panX >= 90 && cockpit.panX <= 230;
-      return Boolean(centered && cockpit.lookUp);
-    }
+    const rect = creatureScreenRect(c, cockpit.panX);
+    return rect.eyeX >= DIRECT_GAZE_MIN_X && rect.eyeX <= DIRECT_GAZE_MAX_X;
+  }
 
-    // Looking up at the roof skylight puts ground windows into a blindspot
-    if (cockpit.lookUp) return false;
+  // Checks if creature is visible in the adjacent window via peripheral vision (outside direct gaze cone, so it keeps moving!)
+  function isCreatureInPeripheral(c, state) {
+    if (!c || !state) return false;
+    const { cockpit, camera } = state;
+    if (camera.blindTimer > 0 || cockpit.blinkTimer > 0) return false;
+    if (isCreatureInViewCone(c, state)) return false;
 
-    if (c.dir === 'FRONT') {
-      // Blocked if rain blur exceeds threshold (wipers required to clear front glass)
-      if (cockpit.rainBlur > cfg.blurThreshold) {
-        return false;
-      }
-    }
+    const rect = creatureScreenRect(c, cockpit.panX);
+    return rect.x + rect.w >= -4 && rect.x <= SCREEN_W + 4;
+  }
 
-    const rect = creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
-    // Eye point must fall inside the focused 176px center gaze cone (cannot freeze 2 windows at once)
-    const inHorizView = rect.eyeX >= 72 && rect.eyeX <= SCREEN_W - 72;
-    if (!inHorizView) return false;
-
+  // Sacred 123 Wooden Man Rule:
+  // Direct central naked-eye contact (!vfActive) locks the creature into 100% absolute statue stillness.
+  // Raising the camera viewfinder (vfActive) covers your naked eyes behind the camera body, breaking eye contact!
+  function isCreatureGazed(c, state) {
+    if (!isCreatureInViewCone(c, state)) return false;
+    if (state.cockpit.vfActive) return false;
     return true;
   }
 
@@ -289,86 +288,196 @@
   function getViewfinderRect(state) {
     const w = state.cfg.vfW;
     const h = state.cfg.vfH;
-    const x = Math.round((SCREEN_W - w) / 2);
-    const y = state.cockpit.lookUp ? 28 : 54;
+    const panX = state.cockpit && state.cockpit.panX !== undefined ? state.cockpit.panX : 160;
+    const panRatio = (panX - 160) / 160; // -1 (LEFT) .. 0 (FRONT) .. +1 (RIGHT)
+    const centerX = Math.round(SCREEN_W / 2 + panRatio * 65); // 95 (LEFT) .. 160 (FRONT) .. 225 (RIGHT)
+    const x = clamp(Math.round(centerX - w / 2), 16, SCREEN_W - w - 16);
+    const y = 54;
     return { x, y, w, h };
   }
 
   function gradePhoto(c, state) {
     if (!c) {
-      return { grade: 'BLURRY', score: 0, fill: 0, completeness: 0, dir: 'NONE', dist: 1 };
+      return {
+        grade: 'BLURRY',
+        reason: 'NO_SUBJECT',
+        reasonText: 'NO SUBJECT IN FRAME',
+        score: 0,
+        fill: 0,
+        completeness: 0,
+        dir: 'NONE',
+        dist: 1,
+        pose: 'WAIT',
+      };
     }
     const vf = getViewfinderRect(state);
-    const rect = creatureScreenRect(c, state.cockpit.panX, state.cockpit.lookUp);
+    const rect = creatureScreenRect(c, state.cockpit.panX);
     const area = rect.w * rect.h;
     const completeness = area > 0 ? overlapArea(vf, rect) / area : 0;
     const fill = clamp(1 - c.dist, 0, 1);
 
-    // If front window is blurred, photo quality degrades severely
-    const blurPenalty = (c.dir === 'FRONT' && state.cockpit.rainBlur > state.cfg.blurThreshold) ? 0.35 : 1.0;
-    const rawScore = (fill * 0.65 + completeness * 0.35) * blurPenalty;
+    const rawScore = fill * 0.65 + completeness * 0.35;
     const score = Math.round(clamp(rawScore * 100, 0, 100));
 
     let grade = 'BLURRY';
-    if (c.dist <= state.cfg.evidenceDist && completeness >= 0.55 && blurPenalty === 1.0) {
+    let reason = 'TOO_FAR';
+    let reasonText = 'OUT OF FOCUS — LET IT CREEP CLOSER';
+    if (c.dist <= state.cfg.evidenceDist && completeness >= 0.55) {
       grade = 'EVIDENCE';
+      reason = 'LOCKED';
+      reasonText = 'SHARP FOCUS LOCKED — EVIDENCE!';
+    } else if (c.dist <= state.cfg.evidenceDist && completeness < 0.55) {
+      grade = completeness >= 0.3 ? 'SUSPICIOUS' : 'BLURRY';
+      reason = 'OFF_CENTER';
+      reasonText = 'OFF-CENTER — PAN TO FRAME IT';
     } else if (c.dist <= state.cfg.suspiciousDist && completeness >= 0.3 && score >= 35) {
       grade = 'SUSPICIOUS';
+      reason = 'TOO_FAR';
+      reasonText = 'STILL BLURRY — WAIT UNTIL SHARP';
+    } else if (completeness < 0.3) {
+      reason = 'OFF_CENTER';
+      reasonText = 'OFF-CENTER — AIM AT THE FIGURE';
     }
 
     return {
       grade,
+      reason,
+      reasonText,
       score,
       fill: Number(fill.toFixed(2)),
       completeness: Number(completeness.toFixed(2)),
       dir: c.dir,
       dist: Number(c.dist.toFixed(2)),
+      pose: c.pose || (c.dist <= state.cfg.lungeDist ? 'LUNGE' : 'WAIT'),
     };
   }
 
-  function spawnCreature(id, ns, rng, forceDir) {
+  function inspectViewfinderTarget(state) {
+    const vf = getViewfinderRect(state);
+    let bestCreature = null;
+    let bestGrade = null;
+    for (const c of state.creatures) {
+      const rect = creatureScreenRect(c, state.cockpit.panX);
+      const ov = overlapArea(vf, rect);
+      if (ov > 0) {
+        const g = gradePhoto(c, state);
+        if (!bestGrade || g.score >= bestGrade.score) {
+          bestCreature = c;
+          bestGrade = g;
+        }
+      }
+    }
+    if (!bestCreature) {
+      return {
+        hasTarget: false,
+        status: 'EMPTY',
+        label: 'NO TARGET IN LENS',
+        subLabel: 'TURN HEAD [A/D] TO FIND IT',
+        focusRatio: 0,
+        blurAmount: 0.88,
+        completeness: 0,
+        dist: 1,
+      };
+    }
+    const focusRatio = clamp((1 - bestCreature.dist) / (1 - state.cfg.evidenceDist), 0, 1);
+    const blurAmount = bestCreature.dist <= state.cfg.evidenceDist
+      ? 0
+      : clamp((bestCreature.dist - state.cfg.evidenceDist) / 0.44, 0.14, 1.0);
+    if (bestGrade.grade === 'EVIDENCE') {
+      return {
+        hasTarget: true,
+        status: 'LOCKED',
+        label: 'SHARP — SHOOT [SPACE]!',
+        subLabel: 'SHARP FOCUS (' + bestGrade.score + ' PTS)',
+        focusRatio: 1,
+        blurAmount: 0,
+        completeness: bestGrade.completeness,
+        dist: bestCreature.dist,
+        creature: bestCreature,
+      };
+    }
+    if (bestCreature.dist <= state.cfg.evidenceDist && bestGrade.completeness < 0.55) {
+      return {
+        hasTarget: true,
+        status: 'OFF_CENTER',
+        label: 'OFF-CENTER — ADJUST AIM [A/D]',
+        subLabel: 'SHARP BUT OFF-CENTER',
+        focusRatio: 0.88,
+        blurAmount: 0.08,
+        completeness: bestGrade.completeness,
+        dist: bestCreature.dist,
+        creature: bestCreature,
+      };
+    }
+    return {
+      hasTarget: true,
+      status: 'APPROACHING',
+      label: 'OUT OF FOCUS... HOLD SHIFT',
+      subLabel: 'CLARIFYING (' + Math.round(focusRatio * 100) + '% FOCUS)',
+      focusRatio,
+      blurAmount,
+      completeness: bestGrade.completeness,
+      dist: bestCreature.dist,
+      creature: bestCreature,
+    };
+  }
+
+  function spawnCreature(id, ns, rng, forceDir, speedScale) {
     const dirs = ns.dirs;
     const dir = forceDir || dirs[Math.floor(rng() * dirs.length)];
-    const offsetX = dir === 'ROOF' ? 0 : Math.round((rng() - 0.5) * 36);
+    const offsetX = Math.round((rng() - 0.5) * 36);
     return {
       id,
       dir,
-      dist: Number((0.78 + rng() * 0.18).toFixed(3)),
+      dist: Number((0.78 + rng() * 0.16).toFixed(3)),
       offsetX,
       lateralDir: rng() < 0.5 ? -1 : 1,
-      shiftTimer: 4.5 + rng() * 3.5,
-      gazeTimer: 0,
+      shiftTimer: ns.shiftMin + rng() * ns.shiftSpan,
+      speedScale: speedScale || 1.0,
       state: 'STALKING',
+      pose: 'WAIT',          // 'WAIT' | 'COIL' | 'LUNGE'
+      unwatchedTime: 0,      // Time spent unwatched since last direct eye contact
+      lookAwayCount: 0,      // Number of times player broke direct eye contact
+      slammedThisApproach: false,
       glintTimer: 0.8 + rng() * 0.8,
-      soundCooldown: 1.2 + rng() * 1.5,
-      feint: false,
+      glintVisible: 0,
+      soundCooldown: 1.1 + rng() * 0.9,
     };
   }
 
   function createGame(config, seed) {
     const cfg = config || makeConfig();
-    const rng = mulberry32(seed || 1989);
-    const state = {
+    const rng = mulberry32(seed === undefined ? 19891103 : seed);
+    return {
       cfg,
       rng,
       phase: 'TITLE', // TITLE | NIGHT_INTRO | PLAYING | NIGHT_SUMMARY | GAME_OVER | VICTORY
       endReason: null,
-      events: [],
+      breachDir: null,
+      night: {
+        number: 1,
+        title: '',
+        subtitle: '',
+        timeElapsed: 0,
+        duration: cfg.nightDuration,
+        evidenceCount: 0,
+        requiredEvidence: 2,
+      },
       cockpit: {
-        panX: 160,
-        lookUp: false,
-        vfActive: false,
-        battery: 100,
-        wipersOn: false,
-        wiperPhase: 0,
-        rainBlur: 0.1,
-        headlightsOn: false,
-        headlightAgitation: 0,
-        radioPan: 0,
-        radioIntensity: 0.1,
-        blackout: false,
+        panX: 160,            // 160 centers on FRONT window (320 - 160)
+        vfActive: false,      // True while camera viewfinder is held up over naked eyes
+        overloadCount: 0,     // Cumulative psychic signal overloads this night (3rd overload = fatal breach!)
+        eyeStrain: 0,         // 0..1 psychic signal interference from staring directly into the entity's eyes
+        blinkTarget: 0.94,    // Organic overload threshold (0.88..1.0)
+        blinkTimer: 0,        // >0 during psychic optic blackout
+        stareDread: 0,        // 0..1 continuous psychological/tinnitus dread while locking eyes
+        shakeTimer: 0,        // >0 violent cabin shake when creature slams onto window glass
+        windowCracks: { LEFT: 0, FRONT: 0, RIGHT: 0 }, // Persistent cross-night spiderweb fracture state per window
+        shootHintTimer: 0,    // >0 shows warning when pressing shutter without raising camera first
         lightningTimer: 4.5,
         lightningFlash: 0,
+        heartbeatTimer: 0.5,
+        rainAmbienceTimer: 0.25,
       },
       camera: {
         filmLeft: cfg.film,
@@ -379,24 +488,15 @@
         allPhotos: [],
       },
       creatures: [],
-      night: {
-        number: 1,
-        title: '',
-        subtitle: '',
-        timeElapsed: 0,
-        duration: cfg.nightDuration,
-        evidenceCount: 0,
-      },
+      events: [],
     };
-    return state;
   }
 
   function startNight(state, nightNum) {
     const ns = nightSettings(nightNum, state.cfg);
     state.phase = 'PLAYING';
     state.endReason = null;
-    state.events = [];
-
+    state.breachDir = null;
     state.night = {
       number: ns.number,
       title: ns.title,
@@ -404,22 +504,26 @@
       timeElapsed: 0,
       duration: ns.duration,
       evidenceCount: 0,
+      requiredEvidence: ns.requiredEvidence || 2,
+      escapedEarly: false,
+      timeBonus: 0,
       settings: ns,
     };
 
     state.cockpit.panX = 160;
-    state.cockpit.lookUp = false;
     state.cockpit.vfActive = false;
-    state.cockpit.battery = ns.startBattery;
-    state.cockpit.wipersOn = false;
-    state.cockpit.wiperPhase = 0;
-    state.cockpit.rainBlur = 0.08;
-    state.cockpit.headlightsOn = false;
-    state.cockpit.headlightAgitation = 0;
-    state.cockpit.radioPan = 0;
-    state.cockpit.radioIntensity = 0.1;
-    state.cockpit.blackout = false;
-    state.cockpit.lightningTimer = 3.0 + state.rng() * 4.0;
+    state.cockpit.overloadCount = 0;
+    state.cockpit.eyeStrain = 0;
+    state.cockpit.blinkTarget = 0.88 + state.rng() * 0.12;
+    state.cockpit.blinkTimer = 0;
+    state.cockpit.stareDread = 0;
+    state.cockpit.shakeTimer = 0;
+    // Cross-Night Spiderweb Persistence: Only reset windowCracks on Night 1; Night 2 & Night 3 inherit existing spiderweb fractures!
+    if (ns.number <= 1 || !state.cockpit.windowCracks) {
+      state.cockpit.windowCracks = { LEFT: 0, FRONT: 0, RIGHT: 0 };
+    }
+    state.cockpit.shootHintTimer = 0;
+    state.cockpit.lightningTimer = 3.5 + state.rng() * 4.5;
     state.cockpit.lightningFlash = 0;
     state.cockpit.heartbeatTimer = 0.45;
     state.cockpit.rainAmbienceTimer = 0.25;
@@ -431,34 +535,40 @@
     state.camera.photoPopupTimer = 0;
 
     state.creatures = [];
-    const firstDirs = ['FRONT', 'LEFT', 'RIGHT'];
-    const d0 = firstDirs[Math.floor(state.rng() * firstDirs.length)];
-    state.creatures.push(spawnCreature(1, ns, state.rng, d0));
+    const dirs = ns.dirs;
+    const d0 = dirs[Math.floor(state.rng() * dirs.length)];
+    state.creatures.push(spawnCreature(1, ns, state.rng, d0, 1.0));
 
     if (ns.creatureCount >= 2) {
-      const otherDirs = ns.dirs.filter((d) => d !== d0);
+      const otherDirs = dirs.filter((d) => d !== d0);
       const d1 = otherDirs[Math.floor(state.rng() * otherDirs.length)] || 'LEFT';
-      const second = spawnCreature(2, ns, state.rng, d1);
-      second.dist = 0.88;
-      second.feint = true;
+      const second = spawnCreature(2, ns, state.rng, d1, 0.62);
+      second.dist = 0.94;
       state.creatures.push(second);
     }
 
     return state;
   }
 
+  function pickUnoccupiedWindow(c, state, ns) {
+    const occupied = state.creatures.filter((o) => o !== c).map((o) => o.dir);
+    const diffDirs = ns.dirs.filter((d) => d !== c.dir);
+    const freeDirs = diffDirs.filter((d) => !occupied.includes(d));
+    const pool = freeDirs.length > 0 ? freeDirs : diffDirs;
+    return pool.length > 0 ? pool[Math.floor(state.rng() * pool.length)] : ns.dirs[0];
+  }
+
   function relocateCreature(c, state) {
     const ns = state.night.settings || nightSettings(state.night.number, state.cfg);
-    const dirs = ns.dirs;
-    // Pick a new direction, avoiding current direction if possible
-    const candidates = dirs.filter((d) => d !== c.dir);
-    const nextDir = candidates.length > 0
-      ? candidates[Math.floor(state.rng() * candidates.length)]
-      : dirs[0];
-    c.dir = nextDir;
+    c.dir = pickUnoccupiedWindow(c, state, ns);
     c.dist = state.cfg.retreatDist;
-    c.offsetX = nextDir === 'ROOF' ? 0 : Math.round((state.rng() - 0.5) * 36);
+    c.offsetX = Math.round((state.rng() - 0.5) * 36);
     c.state = 'STALKING';
+    c.pose = 'WAIT';
+    c.unwatchedTime = 0;
+    c.lookAwayCount = 0;
+    c.slammedThisApproach = false;
+    c.shiftTimer = ns.shiftMin + state.rng() * ns.shiftSpan;
   }
 
   function handleShutter(state) {
@@ -471,13 +581,13 @@
     camera.photoPopupTimer = 3.2;
     state.events.push({ type: 'SHUTTER_BLAST' });
 
-    // Evaluate photo against the most prominent creature in view
+    // Evaluate photo against the most prominent creature inside the viewfinder
     const vf = getViewfinderRect(state);
     let bestCreature = null;
-    let bestGradeObj = { grade: 'BLURRY', score: 0, fill: 0, completeness: 0, dir: 'NONE', dist: 1 };
+    let bestGradeObj = gradePhoto(null, state);
 
     for (const c of state.creatures) {
-      const rect = creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
+      const rect = creatureScreenRect(c, cockpit.panX);
       const ov = overlapArea(vf, rect);
       if (ov > 0) {
         const g = gradePhoto(c, state);
@@ -487,13 +597,13 @@
         }
       }
     }
+    bestGradeObj.night = state.night.number;
 
-    // Any creature visible in the current window gets pushed back by the flash!
+    // Any creature in the currently aimed window cone gets blasted back into the forest by the high-voltage flash!
     for (const c of state.creatures) {
-      const rect = creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
-      const onScreen = rect.eyeX >= 0 && rect.eyeX <= SCREEN_W;
-      const roofMatch = (c.dir === 'ROOF') === Boolean(cockpit.lookUp);
-      if (onScreen && roofMatch) {
+      const rect = creatureScreenRect(c, cockpit.panX);
+      const inAimedWindow = (rect.eyeX >= DIRECT_GAZE_MIN_X && rect.eyeX <= DIRECT_GAZE_MAX_X) || overlapArea(vf, rect) > 0;
+      if (inAimedWindow) {
         state.events.push({ type: 'MONSTER_SCREAM', dir: c.dir });
         relocateCreature(c, state);
       }
@@ -518,6 +628,7 @@
         state.night.number = 1;
         state.night.title = ns.title;
         state.night.subtitle = ns.subtitle;
+        state.night.requiredEvidence = ns.requiredEvidence || 2;
         state.phase = 'NIGHT_INTRO';
         state.events.push({ type: 'SWITCH_CLICK' });
       }
@@ -542,6 +653,7 @@
           state.night.number = nextN;
           state.night.title = ns.title;
           state.night.subtitle = ns.subtitle;
+          state.night.requiredEvidence = ns.requiredEvidence || 3;
           state.phase = 'NIGHT_INTRO';
         }
         state.events.push({ type: 'SWITCH_CLICK' });
@@ -561,11 +673,12 @@
     // PLAYING PHASE
     const { cockpit, camera, cfg, night } = state;
     const ns = night.settings || nightSettings(night.number, cfg);
+    const reqEvidence = night.requiredEvidence || ns.requiredEvidence || 2;
 
     // 0. Night clock & Dawn check
     night.timeElapsed += dt;
     if (night.timeElapsed >= night.duration) {
-      if (night.evidenceCount >= 1) {
+      if (night.evidenceCount >= reqEvidence) {
         state.phase = 'NIGHT_SUMMARY';
         state.events.push({ type: 'DAWN_CHIME' });
       } else {
@@ -575,68 +688,31 @@
       return state;
     }
 
-    // 1. Head panning and lookUp
+    // 1. Head panning and camera viewfinder raise/lower
     if (inp.left && !inp.right) {
       cockpit.panX = clamp(cockpit.panX - cfg.panSpeed * dt, 0, MAX_PAN_X);
     } else if (inp.right && !inp.left) {
       cockpit.panX = clamp(cockpit.panX + cfg.panSpeed * dt, 0, MAX_PAN_X);
     }
 
-    if (inp.lookUp !== undefined) {
-      cockpit.lookUp = Boolean(inp.lookUp);
-    }
+    const prevVf = cockpit.vfActive;
     if (inp.aim !== undefined) {
       cockpit.vfActive = Boolean(inp.aim);
     }
-
-    // 2. Toggle switches (if battery > 0)
-    if (!cockpit.blackout) {
-      if (inp.toggleWipers) {
-        cockpit.wipersOn = !cockpit.wipersOn;
-        state.events.push({ type: 'SWITCH_CLICK' });
-      }
-      if (inp.toggleHeadlights) {
-        cockpit.headlightsOn = !cockpit.headlightsOn;
-        state.events.push({ type: 'SWITCH_CLICK' });
-      }
+    if (cockpit.vfActive !== prevVf) {
+      state.events.push({ type: 'SWITCH_CLICK' });
     }
 
-    // 3. Battery consumption
-    if (cockpit.battery > 0) {
-      let drain = cfg.radioDrain;
-      if (cockpit.wipersOn) drain += cfg.wiperDrain;
-      if (cockpit.headlightsOn) drain += cfg.headlightDrain;
-      cockpit.battery = Math.max(0, cockpit.battery - drain * ns.drainMult * dt);
-      if (cockpit.battery === 0) {
-        cockpit.wipersOn = false;
-        cockpit.headlightsOn = false;
-        cockpit.blackout = true;
-        state.events.push({ type: 'BLACKOUT' });
-      }
-    }
-
-    // 4. Windshield rain & wipers
-    if (cockpit.wipersOn && !cockpit.blackout) {
-      const prevCycle = Math.floor(cockpit.wiperPhase);
-      cockpit.wiperPhase += dt / 1.2;
-      if (Math.floor(cockpit.wiperPhase) > prevCycle) {
-        state.events.push({ type: 'WIPER_SWEEP' });
-      }
-      cockpit.rainBlur = Math.max(0.05, cockpit.rainBlur - 0.65 * dt);
-    } else {
-      cockpit.rainBlur = clamp(cockpit.rainBlur + cfg.rainRate * ns.rainMult * dt, 0, 1);
-    }
-
-    // 5. Lightning ambience
+    // 2. Exterior storm lightning ambience
     cockpit.lightningTimer -= dt;
     if (cockpit.lightningTimer <= 0) {
-      cockpit.lightningFlash = 0.35;
-      cockpit.lightningTimer = 5.0 + state.rng() * 7.0;
+      cockpit.lightningFlash = 0.28;
+      cockpit.lightningTimer = 6.0 + state.rng() * 8.0;
     } else if (cockpit.lightningFlash > 0) {
       cockpit.lightningFlash = Math.max(0, cockpit.lightningFlash - dt);
     }
 
-    // 6. Camera timers & Shutter trigger
+    // 3. Camera timers & Shutter trigger (Must raise viewfinder first to prevent 0-frame blind-sniping!)
     if (camera.chargeTimer > 0) {
       camera.chargeTimer = Math.max(0, camera.chargeTimer - dt);
     }
@@ -646,96 +722,221 @@
     if (camera.photoPopupTimer > 0) {
       camera.photoPopupTimer = Math.max(0, camera.photoPopupTimer - dt);
     }
-
-    if (inp.shoot) {
-      cockpit.vfActive = true;
-      handleShutter(state);
+    if (cockpit.shootHintTimer > 0) {
+      cockpit.shootHintTimer = Math.max(0, cockpit.shootHintTimer - dt);
     }
 
-    // Check if out of film with 0 evidence after taking the last shot
-    if (camera.filmLeft === 0 && night.evidenceCount === 0 && camera.blindTimer === 0) {
+    if (inp.shoot) {
+      if (cockpit.vfActive) {
+        handleShutter(state);
+      } else {
+        cockpit.shootHintTimer = 1.2;
+        state.events.push({ type: 'SWITCH_CLICK' });
+      }
+    }
+
+    // Once all required EVIDENCE photos for this night are secured (and 1s flash glare clears), advance to NIGHT_SUMMARY!
+    if (night.evidenceCount >= reqEvidence && camera.blindTimer <= 0) {
+      state.phase = 'NIGHT_SUMMARY';
+      state.events.push({ type: 'DAWN_CHIME' });
+      return state;
+    }
+
+    // If remaining film exposures cannot possibly reach the required evidence count -> investigation failed
+    if (night.evidenceCount + camera.filmLeft < reqEvidence && camera.blindTimer === 0) {
       state.phase = 'GAME_OVER';
       state.endReason = 'OUT_OF_FILM';
       return state;
     }
 
-    // 7. Creature AI & Radio Radar calculation
-    let closestCreature = null;
-    let closestRealCreature = null;
-    for (const c of state.creatures) {
-      const gazed = isCreatureGazed(c, state);
+    // 4. Pillar 2: Entity Psychic Gaze Interference & 3-Stage Signal Blackout Escalation
+    if (cockpit.blinkTimer > 0) {
+      cockpit.blinkTimer = Math.max(0, cockpit.blinkTimer - dt);
+    }
+    if (cockpit.shakeTimer > 0) {
+      cockpit.shakeTimer = Math.max(0, cockpit.shakeTimer - dt);
+    }
 
-      // Headlights agitation: if headlights are left on, FRONT creature may flank to LEFT or RIGHT
-      if (cockpit.headlightsOn && c.dir === 'FRONT' && c.dist > 0.35) {
-        cockpit.headlightAgitation += dt;
-        if (cockpit.headlightAgitation > 3.5) {
-          cockpit.headlightAgitation = 0;
-          c.dir = state.rng() < 0.5 ? 'LEFT' : 'RIGHT';
-          c.dist = Math.max(0.45, c.dist - 0.1);
-        }
-      }
+    let justBlinked = false;
+    if (cockpit.blinkTimer <= 0 && !cockpit.vfActive && camera.blindTimer <= 0) {
+      const staredCreatures = state.creatures.filter((c) => isCreatureInViewCone(c, state));
+      if (staredCreatures.length > 0) {
+        const nearestStared = staredCreatures.reduce((a, b) => (a.dist < b.dist ? a : b));
+        // Closer proximity intensifies the entity's psychic interference!
+        const distWindowMult = nearestStared.dist <= 0.26 ? 0.62 : (nearestStared.dist <= 0.52 ? 0.80 : 1.0);
+        const effectiveMaxStare = Math.max(0.8, cfg.maxStare * distWindowMult);
+        cockpit.eyeStrain = clamp((cockpit.eyeStrain || 0) + dt / effectiveMaxStare, 0, 1);
 
-      if (gazed) {
-        c.state = 'FROZEN';
-        if (c.feint) {
-          c.gazeTimer = (c.gazeTimer || 0) + dt;
-          if (c.gazeTimer >= 0.55) {
-            c.gazeTimer = 0;
-            const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
-            state.events.push({ type: 'FEINT_VANISH', pan });
-            relocateCreature(c, state);
+        const nearFactor = clamp(1 - nearestStared.dist, 0, 1);
+        cockpit.stareDread = clamp(cockpit.eyeStrain * 0.78 + nearFactor * 0.48, 0, 1);
+
+        const target = cockpit.blinkTarget || 0.94;
+        if (cockpit.eyeStrain >= target) {
+          // Psychic Optic Signal Overload!
+          // Overload 1 & 2: Slams current window (leaving spiderweb crack) AND shifts to another window so you MUST turn to find it!
+          // Overload 3: 3rd overload is guaranteed fatal window shatter!
+          cockpit.eyeStrain = 0;
+          cockpit.blinkTarget = 0.88 + state.rng() * 0.12;
+          cockpit.blinkTimer = cfg.blinkDuration;
+          cockpit.stareDread = Math.max(0.35, cockpit.stareDread);
+          cockpit.overloadCount = (cockpit.overloadCount || 0) + 1;
+          justBlinked = true;
+
+          for (const c of staredCreatures) {
+            const oldDir = c.dir;
+            const pan = oldDir === 'LEFT' ? -0.85 : oldDir === 'RIGHT' ? 0.85 : 0;
+            c.lookAwayCount = (c.lookAwayCount || 0) + 1;
+            c.state = 'STALKING';
+
+            if (cockpit.overloadCount >= 3) {
+              // 3rd Psychic Overload: Guaranteed fatal glass shatter!
+              c.dist = 0;
+            } else {
+              // Overload 1 & 2: Slams the current window (leaving a permanent spiderweb crack) and vanishes to another window!
+              cockpit.shakeTimer = 0.38;
+              if (cockpit.windowCracks) {
+                cockpit.windowCracks[oldDir] = Math.min(2, (cockpit.windowCracks[oldDir] || 0) + 1);
+              }
+              state.events.push({ type: 'WINDOW_SLAM', pan, near: 0.85 });
+
+              // Relocate out of the current window so when your vision returns, only the spiderweb crack remains!
+              c.dir = pickUnoccupiedWindow(c, state, ns);
+              c.offsetX = Math.round((state.rng() - 0.5) * 32);
+              c.shiftTimer = ns.shiftMin + state.rng() * ns.shiftSpan;
+              if (cockpit.overloadCount === 1) {
+                c.dist = Number((0.52 + state.rng() * 0.04).toFixed(4));
+                c.pose = 'COIL';
+              } else {
+                c.dist = Number((0.39 + state.rng() * 0.03).toFixed(4));
+                c.pose = 'LUNGE';
+              }
+            }
           }
         }
       } else {
-        c.state = 'STALKING';
-        c.gazeTimer = 0;
+        cockpit.eyeStrain = Math.max(0, (cockpit.eyeStrain || 0) - dt * 0.35);
+        cockpit.stareDread = Math.max(0, (cockpit.stareDread || 0) - dt * 1.6);
+      }
+    } else if (cockpit.vfActive || camera.blindTimer > 0) {
+      // Looking through the camera lens slows psychic recovery if the entity is right in front of the lens
+      const inConeWhileAiming = state.creatures.some((c) => isCreatureInViewCone(c, state));
+      const recoveryRate = inConeWhileAiming ? 0.06 : 0.25;
+      cockpit.eyeStrain = Math.max(0, (cockpit.eyeStrain || 0) - dt * recoveryRate);
+      cockpit.stareDread = Math.max(0, (cockpit.stareDread || 0) - dt * 1.1);
+    }
 
-        // B1: Lateral movement between trees when unwatched
-        if (c.dir !== 'ROOF') {
+    // 5. Pure "123 Wooden Man" Creature AI
+    let closestCreature = null;
+
+    for (const c of state.creatures) {
+      if (justBlinked) {
+        if (!closestCreature || c.dist < closestCreature.dist) closestCreature = c;
+        if (c.dist <= 0) {
+          state.phase = 'GAME_OVER';
+          state.endReason = 'BREACH';
+          state.breachDir = c.dir;
+          state.events.push({ type: 'GLASS_SHATTER', dir: c.dir });
+          return state;
+        }
+        continue;
+      }
+
+      const wasFrozen = c.state === 'FROZEN';
+      const inCone = isCreatureInViewCone(c, state);
+      const gazed = isCreatureGazed(c, state);
+      const luredInVf = inCone && cockpit.vfActive && camera.blindTimer <= 0;
+
+      c.glintVisible = Math.max(0, (c.glintVisible || 0) - dt);
+
+      if (gazed) {
+        // SACRED RULE: While your central naked eyes are on it, it is 100% DEAD STILL.
+        // Zero movement, zero lateral drift, zero cheat-timers, dead silence.
+        // Naked-eye gaze also holds/recoils the creature at the window threshold (>= 0.38),
+        // so you MUST hold the camera viewfinder [SHIFT] to lure it into close-up EVIDENCE focus (<= 0.34)!
+        c.state = 'FROZEN';
+        if (!wasFrozen && c.dist < 0.38) {
+          c.dist = 0.38;
+          c.pose = 'LUNGE';
+        }
+        if (!wasFrozen && (c.unwatchedTime || 0) > 0.15 && c.dist > cfg.lungeDist && c.pose !== 'LUNGE') {
+          c.pose = 'COIL';
+        }
+        if (c.dist <= cfg.lungeDist) {
+          c.pose = 'LUNGE';
+        }
+        c.unwatchedTime = 0;
+      } else {
+        // Sight is interrupted (turned head away, covered eyes with camera viewfinder, or flash-blinded)
+        c.state = 'STALKING';
+        if (wasFrozen) {
+          c.lookAwayCount = (c.lookAwayCount || 0) + 1;
+          c.unwatchedTime = 0;
+        }
+        c.unwatchedTime = (c.unwatchedTime || 0) + dt;
+
+        if (luredInVf) {
+          // Camera body covers your naked eyes -> creature unfreezes and stalks straight toward the lens!
+          if (c.offsetX) {
+            const pull = Math.min(Math.abs(c.offsetX), 28 * dt);
+            c.offsetX -= Math.sign(c.offsetX) * pull;
+          }
+        } else {
+          // Lateral movement between pine trees when unwatched in a blindspot
           const latDir = c.lateralDir || 1;
-          c.offsetX = (c.offsetX || 0) + latDir * 24 * dt;
-          if (c.offsetX > 44) {
-            c.offsetX = 44;
+          c.offsetX = (c.offsetX || 0) + latDir * 22 * dt;
+          if (c.offsetX > 42) {
+            c.offsetX = 42;
             c.lateralDir = -1;
-          } else if (c.offsetX < -44) {
-            c.offsetX = -44;
+          } else if (c.offsetX < -42) {
+            c.offsetX = -42;
             c.lateralDir = 1;
           }
-        }
 
-        // B1: Window shifting when unwatched at medium-to-far range
-        c.shiftTimer = (c.shiftTimer !== undefined ? c.shiftTimer : 5.0) - dt;
-        if (c.shiftTimer <= 0 && c.dist > 0.38) {
-          const candidates = ns.dirs.filter((d) => d !== c.dir);
-          if (candidates.length > 0) {
-            c.dir = candidates[Math.floor(state.rng() * candidates.length)];
-            c.offsetX = c.dir === 'ROOF' ? 0 : Math.round((state.rng() - 0.5) * 32);
+          // Window shifting when left unwatched at medium-to-far range
+          c.shiftTimer = (c.shiftTimer !== undefined ? c.shiftTimer : 5.0) - dt;
+          if (c.shiftTimer <= 0 && c.dist > 0.38) {
+            c.dir = pickUnoccupiedWindow(c, state, ns);
+            c.offsetX = Math.round((state.rng() - 0.5) * 32);
             const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
             state.events.push({ type: 'BRANCH_SNAP', pan, near: 1 - c.dist });
+            c.shiftTimer = ns.shiftMin + state.rng() * ns.shiftSpan;
           }
-          c.shiftTimer = 4.5 + state.rng() * 3.5;
         }
 
-        const flankBoost = (cockpit.headlightsOn && (c.dir === 'LEFT' || c.dir === 'RIGHT')) ? 1.25 : 1.0;
-        const feintBoost = c.feint ? 1.25 : 1.0;
-        const stepDist = cfg.approachSpeed * ns.approachMult * flankBoost * feintBoost * dt;
+        // Pose-driven approach rhythm: deceptive slow WAIT -> explosive COIL -> point-blank LUNGE
+        let poseMult = 1.0;
+        if (c.dist <= cfg.lungeDist) {
+          c.pose = 'LUNGE';
+          poseMult = cfg.lungeMult;
+        } else if ((c.pose || 'WAIT') === 'WAIT') {
+          if ((c.lookAwayCount || 0) >= 2 || c.unwatchedTime >= 0.85 || c.dist < 0.62) {
+            c.pose = 'COIL';
+            poseMult = cfg.coilMult;
+          } else {
+            poseMult = cfg.waitMult;
+          }
+        } else {
+          c.pose = 'COIL';
+          poseMult = cfg.coilMult;
+        }
+
+        const stepDist = cfg.approachSpeed * ns.approachMult * (c.speedScale || 1.0) * poseMult * dt;
         c.dist = Math.max(0, c.dist - stepDist);
+        if (c.dist <= cfg.lungeDist) c.pose = 'LUNGE';
 
-        // B2: Feint decoy vanishes in static at close range instead of breaching
-        if (c.feint && c.dist <= 0.18) {
-          const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
-          state.events.push({ type: 'FEINT_VANISH', pan });
-          relocateCreature(c, state);
-          continue;
+        // Periodic crimson eye glint when lurking in darkness
+        c.glintTimer = (c.glintTimer !== undefined ? c.glintTimer : 1.0) - dt;
+        if (c.glintTimer <= 0) {
+          c.glintTimer = 0.9 + c.dist * 0.9;
+          c.glintVisible = 0.26;
         }
 
+        // Stereo spatial audio cues (only emitted while moving — dead silent when frozen!)
         c.soundCooldown -= dt;
         if (c.soundCooldown <= 0) {
-          c.soundCooldown = 1.4 + c.dist * 1.8;
+          c.soundCooldown = (luredInVf ? 0.65 : 1.25) + c.dist * 1.4;
           const pan = c.dir === 'LEFT' ? -0.85 : c.dir === 'RIGHT' ? 0.85 : 0;
-          if (c.dir === 'ROOF') {
-            state.events.push({ type: 'ROOF_THUD', near: 1 - c.dist });
-          } else if (c.dist < 0.45) {
+          if (c.dist <= cfg.lungeDist) {
             state.events.push({ type: 'METAL_SCRATCH', pan, near: 1 - c.dist });
           } else {
             state.events.push({ type: 'FOOTSTEP', pan, near: 1 - c.dist });
@@ -746,12 +947,9 @@
       if (!closestCreature || c.dist < closestCreature.dist) {
         closestCreature = c;
       }
-      if (!c.feint && (!closestRealCreature || c.dist < closestRealCreature.dist)) {
-        closestRealCreature = c;
-      }
 
-      // Check window breach (only real creatures can breach)
-      if (!c.feint && c.dist <= 0) {
+      // Window breach -> instant game over
+      if (c.dist <= 0) {
         state.phase = 'GAME_OVER';
         state.endReason = 'BREACH';
         state.breachDir = c.dir;
@@ -760,32 +958,21 @@
       }
     }
 
-    // B3: Continuous rain ambience & accelerating heartbeat based on closest real threat
+    // 5. Continuous rain ambience & proximity-driven heartbeat
     cockpit.rainAmbienceTimer = (cockpit.rainAmbienceTimer !== undefined ? cockpit.rainAmbienceTimer : 0.25) - dt;
     if (cockpit.rainAmbienceTimer <= 0) {
       cockpit.rainAmbienceTimer = 0.45;
       state.events.push({ type: 'RAIN_AMBIENCE', intensity: ns.rainMult });
     }
 
-    const threat = closestRealCreature || closestCreature;
-    if (threat && threat.dist < 0.85) {
+    if (closestCreature && (closestCreature.dist < 0.82 || (cockpit.eyeStrain || 0) > 0.45)) {
+      const effectiveDist = Math.max(0, closestCreature.dist - (cockpit.eyeStrain || 0) * 0.38);
       cockpit.heartbeatTimer = (cockpit.heartbeatTimer !== undefined ? cockpit.heartbeatTimer : 0.45) - dt;
       if (cockpit.heartbeatTimer <= 0) {
-        cockpit.heartbeatTimer = Math.max(0.32, 0.22 + threat.dist * 0.85);
-        state.events.push({ type: 'HEARTBEAT', near: Number((1 - threat.dist).toFixed(2)) });
+        cockpit.heartbeatTimer = Math.max(0.24, 0.19 + effectiveDist * 0.82);
+        state.events.push({ type: 'HEARTBEAT', near: Number(clamp(1 - effectiveDist, 0.1, 1).toFixed(2)) });
       }
     }
-
-    // Update paranormal AM radio radar
-    if (closestCreature && !cockpit.blackout) {
-      const targetPan = closestCreature.dir === 'LEFT' ? -0.9 : closestCreature.dir === 'RIGHT' ? 0.9 : 0;
-      cockpit.radioPan = targetPan;
-      cockpit.radioIntensity = clamp(1 - closestCreature.dist, 0.12, 1.0);
-    } else {
-      cockpit.radioPan = 0;
-      cockpit.radioIntensity = 0;
-    }
-
 
     return state;
   }
@@ -796,14 +983,20 @@
     WORLD_W,
     MAX_PAN_X,
     DIR_WORLD_X,
+    PILLAR_WORLD_X,
+    DIRECT_GAZE_MIN_X,
+    DIRECT_GAZE_MAX_X,
     DEFAULTS,
     makeConfig,
     nightSettings,
     creatureWorldPos,
     creatureScreenRect,
     getViewfinderRect,
+    isCreatureInViewCone,
+    isCreatureInPeripheral,
     isCreatureGazed,
     gradePhoto,
+    inspectViewfinderTarget,
     createGame,
     startNight,
     step,
@@ -815,9 +1008,7 @@
   }
 })(typeof window !== 'undefined' ? window : globalThis);
 
-</script>
-  <script>
-/* EVIDENCE 1989: BLACK RAIN — 16-bit 4-Layer Parallax Canvas Renderer (320x240 logical). */
+/* EVIDENCE 1989: BLACK RAIN — Pure 16-bit 4-Layer Parallax Renderer (Lookout Cabin Spatial Frame, Peripheral Vision & Optical Focus). */
 (function (root) {
   'use strict';
 
@@ -839,36 +1030,37 @@
     midPine: '#182b33',
     nearPine: '#0c161c',
     mudGround: '#12131a',
-    headlightBeam: '#d6cf94',
     creatureShadow: '#050608',
     creatureRim: '#2e3d4f',
+    corpsePale: '#cfd6de',
+    corpseDim: '#7f8c9a',
     eyeRed: '#ff2233',
     eyeGlow: '#ff7788',
-    glassTint: '#1a2c3d',
+    breathFog: 'rgba(180, 205, 225, 0.16)',
     rainStreak: '#527394',
-    cockpitDark: '#121014',
-    cockpitTrim: '#26222b',
-    cockpitLeather: '#362b28',
-    dashPanel: '#1c1920',
+    cockpitDark: '#100e13',
+    cockpitTrim: '#221f28',
+    cockpitLeather: '#2e2523',
+    dashPanel: '#16141a',
     amberGlow: '#ffb000',
-    amberDim: '#704d00',
-    radioGreen: '#38d973',
+    amberDim: '#694800',
+    quartzGreen: '#38d973',
     dangerRed: '#e62e2e',
     polaroidWhite: '#e8e6df',
   };
 
   const FOREST_TREES = [
     { wx: 35, h: 125, w: 38, layer: 1 },
-    { wx: 85, h: 148, w: 46, layer: 2 },
-    { wx: 138, h: 118, w: 34, layer: 1 },
-    { wx: 185, h: 140, w: 42, layer: 2 },
-    { wx: 245, h: 122, w: 36, layer: 1 },
-    { wx: 295, h: 135, w: 40, layer: 1 },
+    { wx: 85, h: 148, w: 44, layer: 2 },
+    { wx: 130, h: 118, w: 34, layer: 1 },
+    { wx: 195, h: 140, w: 40, layer: 2 },
+    { wx: 245, h: 124, w: 36, layer: 1 },
+    { wx: 295, h: 135, w: 38, layer: 1 },
     { wx: 355, h: 130, w: 38, layer: 1 },
-    { wx: 410, h: 145, w: 44, layer: 2 },
-    { wx: 468, h: 128, w: 38, layer: 1 },
-    { wx: 520, h: 152, w: 46, layer: 2 },
-    { wx: 575, h: 132, w: 40, layer: 1 },
+    { wx: 410, h: 145, w: 42, layer: 2 },
+    { wx: 465, h: 128, w: 36, layer: 1 },
+    { wx: 515, h: 150, w: 44, layer: 2 },
+    { wx: 570, h: 132, w: 38, layer: 1 },
     { wx: 620, h: 142, w: 42, layer: 2 },
   ];
 
@@ -902,87 +1094,253 @@
     }
   }
 
-  function drawCreature16Bit(ctx, c, state) {
-    const { cockpit } = state;
-    if (c.dir === 'ROOF' && !cockpit.lookUp) return;
-
-    const r = C.creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
-    if (r.x + r.w < 0 || r.x > W) return;
-
-    const gazed = C.isCreatureGazed(c, state);
-    const litByHeadlights = cockpit.headlightsOn && c.dir === 'FRONT' && !cockpit.blackout;
-    const litByLightning = cockpit.lightningFlash > 0.05;
-
-    // In 16-bit horror, creature is a hulking multi-jointed cryptid silhouette, not a stick figure
-    const cx = Math.round(r.x + r.w / 2);
-    const headR = Math.max(4, Math.round(r.w * 0.32));
-    const shoulderW = Math.round(r.w * 1.15);
-    const torsoW = Math.round(r.w * 0.72);
-
-    ctx.fillStyle = PAL.creatureShadow;
-    // Hunched shoulders & elongated torso
-    ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.3), shoulderW, Math.round(r.h * 0.32));
-    ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.8), torsoW, Math.round(r.h * 0.45));
-    // Head
-    ctx.fillRect(Math.round(cx - headR), r.y, headR * 2, Math.round(headR * 1.7));
-    // Long clawed arms hanging down
-    const armW = Math.max(2, Math.round(r.w * 0.18));
-    ctx.fillRect(Math.round(cx - shoulderW / 2 - armW + 1), Math.round(r.y + headR * 1.5), armW, Math.round(r.h * 0.62));
-    ctx.fillRect(Math.round(cx + shoulderW / 2 - 1), Math.round(r.y + headR * 1.5), armW, Math.round(r.h * 0.62));
-
-    // Rim highlight when illuminated by headlights or lightning
-    if (litByHeadlights || litByLightning || gazed) {
-      ctx.fillStyle = PAL.creatureRim;
-      ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.3), shoulderW, 2);
-      ctx.fillRect(Math.round(cx - headR), r.y, headR * 2, 2);
+  function drawCreatureBodyPass(ctx, cx, r, headR, shoulderW, torsoW, armW, pose, headCenterX, headTopY, bodyColor, rimColor) {
+    ctx.fillStyle = bodyColor;
+    if (pose === 'WAIT') {
+      ctx.fillRect(Math.round(cx - 2), Math.round(r.y + headR * 1.2), 4, Math.round(headR * 0.8));
+      ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.5), shoulderW, Math.round(r.h * 0.24));
+      ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.9), torsoW, Math.round(r.h * 0.48));
+      ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, Math.round(headR * 1.85));
+      const armTop = Math.round(r.y + headR * 1.6);
+      const armLen = Math.round(r.h * 0.68);
+      ctx.fillRect(Math.round(cx - shoulderW / 2 - armW + 1), armTop, armW, armLen);
+      ctx.fillRect(Math.round(cx + shoulderW / 2 - 1), armTop, armW, armLen);
+      ctx.fillRect(Math.round(cx - shoulderW / 2 - armW - 1), armTop + armLen, 1, 5);
+      ctx.fillRect(Math.round(cx + shoulderW / 2 + armW), armTop + armLen, 1, 5);
+    } else if (pose === 'COIL') {
+      const crouchY = Math.round(r.y + r.h * 0.14);
+      const wideW = Math.round(shoulderW * 1.38);
+      ctx.fillRect(Math.round(cx - 2), Math.round(crouchY - headR * 0.65), 4, Math.round(headR * 0.85));
+      ctx.fillRect(Math.round(cx - wideW / 2), Math.round(crouchY + headR * 0.8), wideW, Math.round(r.h * 0.26));
+      ctx.fillRect(Math.round(cx - torsoW * 0.62), Math.round(crouchY + headR * 1.3), Math.round(torsoW * 1.24), Math.round(r.h * 0.42));
+      ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, Math.round(headR * 1.75));
+      ctx.fillRect(Math.round(cx - wideW / 2 - armW * 2), Math.round(crouchY + headR * 0.35), armW * 2, Math.round(r.h * 0.48));
+      ctx.fillRect(Math.round(cx + wideW / 2), Math.round(crouchY + headR * 0.35), armW * 2, Math.round(r.h * 0.48));
+    } else {
+      const lungeW = Math.round(shoulderW * 1.28);
+      ctx.fillRect(Math.round(cx - lungeW / 2), Math.round(r.y + headR * 1.15), lungeW, Math.round(r.h * 0.38));
+      ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.65), torsoW, Math.round(r.h * 0.52));
+      ctx.fillRect(Math.round(headCenterX - headR * 1.08), headTopY, Math.round(headR * 2.16), Math.round(headR * 2.05));
+      const clawH = Math.round(r.h * 0.58);
+      ctx.fillRect(Math.round(cx - lungeW / 2 - armW - 1), Math.max(2, Math.round(r.y - headR * 0.7)), armW + 2, clawH);
+      ctx.fillRect(Math.round(cx + lungeW / 2 - 1), Math.max(2, Math.round(r.y - headR * 0.7)), armW + 2, clawH);
     }
 
-    // Piercing crimson eyes
-    const eyeSep = Math.max(3, Math.round(headR * 0.55));
-    const eyeSize = c.dist < 0.38 ? 3 : 2;
-    ctx.fillStyle = PAL.eyeRed;
-    ctx.fillRect(Math.round(cx - eyeSep - 1), r.eyeY, eyeSize, eyeSize);
-    ctx.fillRect(Math.round(cx + eyeSep - 1), r.eyeY, eyeSize, eyeSize);
+    if (rimColor) {
+      ctx.fillStyle = rimColor;
+      const rimW = pose === 'COIL' ? Math.round(shoulderW * 1.38) : shoulderW;
+      const rimY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14 + headR * 0.8) : Math.round(r.y + headR * 1.5);
+      ctx.fillRect(Math.round(cx - rimW / 2), rimY, rimW, 2);
+      ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, 2);
+    }
+  }
 
-    if (c.dist < 0.45 || gazed) {
-      ctx.fillStyle = PAL.eyeGlow;
-      ctx.fillRect(Math.round(cx - eyeSep), r.eyeY, 1, 1);
-      ctx.fillRect(Math.round(cx + eyeSep), r.eyeY, 1, 1);
+  function drawCreature16Bit(ctx, c, state) {
+    const { cockpit } = state;
+    const r = C.creatureScreenRect(c, cockpit.panX);
+    if (r.x + r.w < -8 || r.x > W + 8) return;
+
+    const inCone = C.isCreatureInViewCone(c, state);
+    const inPeripheral = C.isCreatureInPeripheral ? C.isCreatureInPeripheral(c, state) : !inCone;
+    const time = state.night ? state.night.timeElapsed : 0;
+
+    // 1. PERIPHERAL VISION OPPRESSION (Teacher Feedback #3):
+    // When looking at Window A, the adjacent Window B is visible in the peripheral margin beyond the pillar.
+    // Because your central gaze is NOT on Window B, the creature in Window B is NOT frozen — you see its dark silhouette creeping in the corner of your eye!
+    if (!inCone && inPeripheral) {
+      const strideBob = Math.round(Math.sin(time * 8.5 + c.id) * 2);
+      const strideSway = Math.round(Math.cos(time * 5.5 + c.id) * 2);
+      const pcx = Math.round(r.x + r.w / 2) + strideSway;
+      const pHeadR = Math.max(4, Math.round(r.w * 0.34));
+      const pShoulderW = Math.round(r.w * 1.16);
+      const pTorsoW = Math.round(r.w * 0.66);
+      const pArmW = Math.max(2, Math.round(r.w * 0.18));
+      const pPose = c.pose || 'WAIT';
+      const pHeadY = (pPose === 'COIL' ? Math.round(r.y + r.h * 0.14) : r.y) + strideBob;
+      const pHeadX = pcx + (pPose === 'WAIT' ? Math.max(2, Math.round(pHeadR * 0.35)) : 0);
+
+      ctx.save();
+      ctx.globalAlpha = clamp(0.68 + (1 - c.dist) * 0.28, 0.65, 0.96);
+      drawCreatureBodyPass(
+        ctx,
+        pcx,
+        { x: r.x, y: r.y + strideBob, w: r.w, h: r.h },
+        pHeadR,
+        pShoulderW,
+        pTorsoW,
+        pArmW,
+        pPose,
+        pHeadX,
+        pHeadY,
+        PAL.creatureShadow,
+        PAL.creatureRim
+      );
+      // Crimson eyes gleaming in your peripheral vision as it stalks closer!
+      const pEyeY = (pPose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY) + strideBob;
+      const pEyeSep = Math.max(3, Math.round(pHeadR * 0.52));
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(pHeadX - pEyeSep - 1), pEyeY, 2, 2);
+      ctx.fillRect(Math.round(pHeadX + pEyeSep - 1), pEyeY, 2, 2);
+      ctx.restore();
+      return;
+    }
+
+    // 2. OPTICAL VIEWFINDER BLUR-TO-SHARP (Teacher Feedback #1):
+    // When the camera is raised (vfActive), if the creature is still too far (> evidenceDist),
+    // it appears blurry/out-of-focus in the viewfinder and progressively sharpens as it approaches!
+    const vfBlur = (cockpit.vfActive && inCone)
+      ? (c.dist <= state.cfg.evidenceDist ? 0 : clamp((c.dist - state.cfg.evidenceDist) / 0.44, 0.14, 1.0))
+      : 0;
+
+    const cx = Math.round(r.x + r.w / 2);
+    const headR = Math.max(4, Math.round(r.w * 0.34));
+    const shoulderW = Math.round(r.w * 1.18);
+    const torsoW = Math.round(r.w * 0.68);
+    const armW = Math.max(2, Math.round(r.w * 0.18));
+    const pose = c.pose || 'WAIT';
+    const strain = cockpit.eyeStrain || 0;
+
+    // Subliminal broken-neck snap during intense psychic interference (> 0.56)
+    const subliminalSnap = (!cockpit.vfActive && strain > 0.56 && Math.sin(time * 33) > 0.86)
+      ? Math.max(3, Math.round(headR * 0.55)) * (c.id % 2 === 0 ? -1 : 1)
+      : 0;
+    const stareReveal = clamp(strain * 1.25 + (1 - c.dist) * 0.65, 0, 1);
+
+    const headOffset = pose === 'WAIT' ? Math.max(2, Math.round(headR * 0.42)) : 0;
+    const headCenterX = cx + headOffset + subliminalSnap;
+    const headTopY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14) : r.y;
+
+    if (vfBlur > 0.05) {
+      // Out-of-focus ghosted silhouette passes (spread shrinks to 0 as creature approaches focus distance!)
+      const spreadX = Math.max(2, Math.round(vfBlur * 11));
+      const spreadY = Math.max(1, Math.round(vfBlur * 5));
+      const offsets = [
+        [-spreadX, 0],
+        [spreadX, 0],
+        [-Math.ceil(spreadX * 0.55), -spreadY],
+        [Math.ceil(spreadX * 0.55), spreadY],
+        [0, 0],
+      ];
+      ctx.save();
+      for (let i = 0; i < offsets.length; i++) {
+        const [ox, oy] = offsets[i];
+        ctx.globalAlpha = i === offsets.length - 1 ? 0.52 : 0.24;
+        drawCreatureBodyPass(
+          ctx,
+          cx + ox,
+          { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h },
+          headR,
+          shoulderW,
+          torsoW,
+          armW,
+          pose,
+          headCenterX + ox,
+          headTopY + oy,
+          PAL.creatureShadow,
+          i === offsets.length - 1 ? PAL.creatureRim : null
+        );
+      }
+      // Out-of-focus diffused red bokeh circles for the eyes (coalescing into sharp points as vfBlur -> 0)
+      const eyeY = pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY;
+      const eyeSep = Math.max(3, Math.round(headR * 0.52));
+      const bokehSize = Math.max(3, Math.round(2 + vfBlur * 5));
+      ctx.globalAlpha = clamp(0.55 - vfBlur * 0.25, 0.22, 0.55);
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - bokehSize / 2), Math.round(eyeY - bokehSize / 2), bokehSize, bokehSize);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - bokehSize / 2), Math.round(eyeY - bokehSize / 2), bokehSize, bokehSize);
+      ctx.restore();
+      return;
+    }
+
+    // 3. RAZOR-SHARP RENDERING (Direct Gaze OR Locked In-Focus Viewfinder!)
+    drawCreatureBodyPass(ctx, cx, r, headR, shoulderW, torsoW, armW, pose, headCenterX, headTopY, PAL.creatureShadow, PAL.creatureRim);
+
+    if (pose === 'LUNGE') {
+      const lungeW = Math.round(shoulderW * 1.28);
+      if (c.dist <= state.cfg.evidenceDist) {
+        ctx.fillStyle = PAL.breathFog;
+        ctx.fillRect(Math.round(headCenterX - headR * 1.35), Math.round(r.eyeY + headR * 0.15), Math.round(headR * 2.7), Math.round(headR * 1.6));
+      }
+      if (c.dist <= 0.24) {
+        const palmY = Math.round(headTopY + headR * 0.85);
+        const leftPalmX = Math.round(cx - lungeW * 0.68);
+        const rightPalmX = Math.round(cx + lungeW * 0.52);
+        ctx.fillStyle = PAL.corpseDim;
+        ctx.fillRect(leftPalmX, palmY, 10, 12);
+        ctx.fillRect(rightPalmX, palmY, 10, 12);
+        ctx.fillStyle = PAL.corpsePale;
+        for (let f = 0; f < 4; f++) {
+          ctx.fillRect(leftPalmX - 1 + f * 3, palmY - 9, 2, 10);
+          ctx.fillRect(rightPalmX - 1 + f * 3, palmY - 9, 2, 10);
+        }
+      }
+    }
+
+    const rimY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14 + headR * 0.8) : Math.round(r.y + headR * 1.5);
+    if ((stareReveal > 0.48 || cockpit.vfActive) && headR >= 7) {
+      ctx.fillStyle = PAL.corpseDim;
+      for (let rib = 0; rib < 3; rib++) {
+        ctx.fillRect(Math.round(cx - torsoW * 0.32), rimY + 8 + rib * 5, Math.round(torsoW * 0.64), 1);
+      }
+    }
+
+    // Uncanny Eyes & Rictus Grin: razor-sharp when in-focus in viewfinder or stared at!
+    const eyeY = pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY;
+    const eyeSep = Math.max(3, Math.round(headR * 0.52));
+
+    if (stareReveal > 0.36 || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist)) {
+      const scleraW = c.dist <= 0.28 ? 6 : (headR >= 8 ? 4 : 3);
+      const scleraH = c.dist <= 0.28 ? 5 : 3;
+      ctx.fillStyle = PAL.corpsePale;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(Math.round(headCenterX - eyeSep), eyeY, 2, 2);
+      ctx.fillRect(Math.round(headCenterX + eyeSep), eyeY, 2, 2);
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep), eyeY, 1, 1);
+      ctx.fillRect(Math.round(headCenterX + eyeSep), eyeY, 1, 1);
+    } else {
+      const eyeSize = c.dist <= state.cfg.lungeDist ? 3 : 2;
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - 1), eyeY, eyeSize, eyeSize);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - 1), eyeY, eyeSize, eyeSize);
+    }
+
+    if (stareReveal > 0.52 || pose === 'LUNGE' || (cockpit.vfActive && c.dist <= state.cfg.evidenceDist)) {
+      const mouthW = Math.max(4, Math.round(headR * 0.95));
+      const mouthH = c.dist <= 0.34 ? Math.max(6, Math.round(headR * 0.80)) : Math.max(3, Math.round(headR * 0.45));
+      const mouthX = Math.round(headCenterX - mouthW / 2);
+      const mouthY = Math.round(eyeY + Math.max(4, headR * 0.48));
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(mouthX - 1, mouthY - 1, mouthW + 2, mouthH + 2);
+      ctx.fillStyle = c.dist <= 0.34 ? PAL.corpsePale : PAL.corpseDim;
+      for (let tx = 0; tx < mouthW; tx += 2) {
+        ctx.fillRect(mouthX + tx, mouthY, 1, mouthH);
+      }
     }
   }
 
   function drawExteriorLayers(ctx, state) {
     const { cockpit } = state;
     const panX = cockpit.panX;
-    const lookUpOffset = cockpit.lookUp ? 34 : 0;
-    const horizonY = 104 + lookUpOffset;
+    const horizonY = 104;
 
-    // Layer 1: Sky & Lightning
+    // Layer 1: Storm Sky & Lightning
     ctx.fillStyle = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : PAL.nightSky;
     ctx.fillRect(0, 0, W, horizonY);
 
-    // Storm cloud bands (Parallax 0.2)
     ctx.fillStyle = PAL.stormCloud;
     for (let i = 0; i < 6; i++) {
       const cx = ((i * 110 - Math.round(panX * 0.2)) % (W + 120)) - 40;
-      ctx.fillRect(cx, 14 + (i % 2) * 12 + lookUpOffset * 0.4, 86, 10);
+      ctx.fillRect(cx, 14 + (i % 2) * 12, 86, 10);
     }
 
-    // Ground / Mud road
+    // Mud ground
     ctx.fillStyle = PAL.mudGround;
     ctx.fillRect(0, horizonY, W, H - horizonY);
 
-    // Headlight cone in FRONT zone when active
-    if (cockpit.headlightsOn && !cockpit.blackout) {
-      const frontCenterScreenX = 320 - panX;
-      ctx.save();
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = PAL.headlightBeam;
-      ctx.fillRect(Math.round(frontCenterScreenX - 95), horizonY - 25, 190, 110);
-      ctx.restore();
-    }
-
-    // Layer 2: Distant treeline (Parallax 0.45)
+    // Layer 2: Far pine treeline (Parallax 0.55)
     for (const t of FOREST_TREES) {
       if (t.layer === 1) {
         const sx = t.wx - panX * 0.55;
@@ -990,12 +1348,12 @@
       }
     }
 
-    // Creatures behind midground trees or stepping out
+    // Creatures lurking in the treeline
     for (const c of state.creatures) {
-      if (c.dir !== 'ROOF') drawCreature16Bit(ctx, c, state);
+      drawCreature16Bit(ctx, c, state);
     }
 
-    // Midground trees (Parallax 0.85)
+    // Near/midground pine trees (Parallax 0.85)
     for (const t of FOREST_TREES) {
       if (t.layer === 2) {
         const sx = t.wx - panX * 0.85;
@@ -1005,58 +1363,60 @@
     }
   }
 
+  // Clean v1 8-ray spiderweb glass fracture (carries across Night 1 -> Night 2 -> Night 3)
+  function drawWindowCrack16Bit(ctx, screenX, cy, level) {
+    if (screenX < -60 || screenX > W + 60 || !level) return;
+    const scale = level >= 2 ? 1.15 : 0.85;
+    const rays = [
+      [-34, -30], [32, -32], [-42, -4], [44, -2],
+      [-36, 18], [38, 22], [-18, 38], [22, 40],
+    ];
+    ctx.strokeStyle = PAL.corpsePale;
+    ctx.lineWidth = 1;
+    // Concentric spiderweb rings (clean v1 density)
+    const ringScales = level >= 2 ? [0.28, 0.56, 0.86, 1.12] : [0.35, 0.72];
+    for (const rs of ringScales) {
+      ctx.beginPath();
+      for (let i = 0; i < rays.length; i++) {
+        const [dx, dy] = rays[i];
+        const px = Math.round(screenX + dx * scale * rs);
+        const py = Math.round(cy + dy * scale * rs);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    // Radial impact lines from center
+    ctx.beginPath();
+    for (const [dx, dy] of rays) {
+      ctx.moveTo(screenX, cy);
+      ctx.lineTo(Math.round(screenX + dx * scale), Math.round(cy + dy * scale));
+    }
+    ctx.stroke();
+    // Impact core point
+    ctx.fillStyle = PAL.corpsePale;
+    ctx.fillRect(screenX - 2, cy - 2, 5, 5);
+  }
+
   function drawWindowGlassLayer(ctx, state) {
-    const { cockpit } = state;
-    const panX = cockpit.panX;
+    const panX = state.cockpit.panX;
     const time = state.night.timeElapsed || 0;
 
-    // Front Windshield rain blur overlay (World X 165..475)
-    const frontLeft = Math.round(165 - panX);
-    const frontRight = Math.round(475 - panX);
-    const clampedLeft = clamp(frontLeft, 0, W);
-    const clampedRight = clamp(frontRight, 0, W);
-
-    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.2) {
-      // Crisp 16-bit raindrop & condensation stipple lines instead of muddy full-window smear
-      const density = Math.floor((cockpit.rainBlur - 0.15) * 28);
-      ctx.fillStyle = PAL.glassTint;
-      for (let r = 0; r < density; r++) {
-        const bandY = 26 + ((r * 19) % 132);
-        const bandX = clampedLeft + ((r * 43) % Math.max(1, clampedRight - clampedLeft - 18));
-        ctx.fillRect(bandX, bandY, 16, 2);
-      }
-      if (cockpit.rainBlur > state.cfg.blurThreshold) {
-        ctx.fillStyle = 'rgba(26, 44, 61, 0.38)';
-        ctx.fillRect(clampedLeft, 22, clampedRight - clampedLeft, 140);
-        const warnX = Math.round((clampedLeft + clampedRight) / 2);
-        text(ctx, 'WINDSHIELD BLURRED - PRESS [1] WIPERS!', warnX, 34, PAL.dangerRed, 8, 'center');
-      }
-    }
-
-    // Rain streaks across all visible glass
+    // Atmospheric 16-bit rain streaks across all lookout glass panes
     ctx.fillStyle = PAL.rainStreak;
-    for (let i = 0; i < 38; i++) {
-      const rx = ((i * 37 + Math.round(time * 90) - Math.round(panX * 0.9)) % W + W) % W;
-      const ry = ((i * 53 + Math.round(time * 210)) % 165);
+    for (let i = 0; i < 36; i++) {
+      const rx = ((i * 37 + Math.round(time * 88) - Math.round(panX * 0.9)) % W + W) % W;
+      const ry = ((i * 53 + Math.round(time * 205)) % 168);
       ctx.fillRect(rx, ry, 1, 7);
     }
 
-    // Wiper blades in front windshield
-    if (clampedRight > clampedLeft) {
-      const angle = Math.sin(cockpit.wiperPhase * Math.PI * 2) * 0.65;
-      const pivot1X = Math.round(255 - panX);
-      const pivot2X = Math.round(375 - panX);
-      const pivotY = 166 + (cockpit.lookUp ? 30 : 0);
-      const tipOffsetX = Math.round(Math.sin(angle) * 55);
-      const tipOffsetY = Math.round(Math.cos(angle) * 68);
-
-      ctx.strokeStyle = PAL.voidBlack;
-      ctx.lineWidth = 3;
-      for (const px of [pivot1X, pivot2X]) {
-        ctx.beginPath();
-        ctx.moveTo(px, pivotY);
-        ctx.lineTo(px + tipOffsetX, pivotY - tipOffsetY);
-        ctx.stroke();
+    // Persistent cross-night 16-bit spiderweb window cracks (retained across Night 1 -> Night 2 -> Night 3!)
+    const cracks = state.cockpit.windowCracks || {};
+    for (const dir of ['LEFT', 'FRONT', 'RIGHT']) {
+      if (cracks[dir] > 0) {
+        const wx = C.DIR_WORLD_X[dir] || 320;
+        drawWindowCrack16Bit(ctx, Math.round(wx - panX), 96, cracks[dir]);
       }
     }
   }
@@ -1064,188 +1424,189 @@
   function drawCockpitInterior(ctx, state) {
     const { cockpit, camera, night } = state;
     const panX = cockpit.panX;
-    const lookUpOffset = cockpit.lookUp ? 34 : 0;
+    const time = night.timeElapsed || 0;
 
-    // Roof liner & Skylight hatch (when looking up)
-    const roofH = 22 + lookUpOffset;
+    // Lookout Tower / Observation Cabin timber-and-steel upper lintel
+    const roofH = 22;
     ctx.fillStyle = PAL.cockpitDark;
     ctx.fillRect(0, 0, W, roofH);
-    ctx.fillStyle = PAL.cockpitTrim;
-    ctx.fillRect(0, roofH - 3, W, 3);
+    ctx.fillStyle = PAL.cockpitLeather;
+    ctx.fillRect(0, roofH - 4, W, 4);
 
-    if (cockpit.lookUp) {
-      const hatchX = Math.round(240 - panX);
-      ctx.fillStyle = PAL.nightSky;
-      ctx.fillRect(hatchX, 4, 160, roofH - 8);
-      ctx.strokeStyle = PAL.cockpitLeather;
-      ctx.strokeRect(hatchX, 4, 160, roofH - 8);
-      // Draw roof creature if present
-      for (const c of state.creatures) {
-        if (c.dir === 'ROOF') drawCreature16Bit(ctx, c, state);
-      }
-      text(ctx, 'ROOF SKYLIGHT', hatchX + 42, roofH - 13, PAL.amberDim, 8);
-    }
-
-    // Left & Right A-Pillars separating side windows from front windshield (World X = 165 and 475)
+    // Classic Structural Window Pillars at World X = 160 and 468
     const leftPillarX = Math.round(160 - panX);
     const rightPillarX = Math.round(468 - panX);
     ctx.fillStyle = PAL.cockpitDark;
-    ctx.fillRect(leftPillarX - 10, 0, 18, H);
-    ctx.fillRect(rightPillarX - 8, 0, 18, H);
-    ctx.fillStyle = PAL.cockpitTrim;
-    ctx.fillRect(leftPillarX + 5, 0, 3, H);
-    ctx.fillRect(rightPillarX - 8, 0, 3, H);
+    ctx.fillRect(leftPillarX, 0, 18, H);
+    ctx.fillRect(rightPillarX, 0, 18, H);
+    ctx.fillStyle = PAL.cockpitLeather;
+    ctx.fillRect(leftPillarX + 15, 0, 3, H);
+    ctx.fillRect(rightPillarX, 0, 3, H);
 
-    // Far left & far right door frames
+    // Outer cabin corner frames (World X <= 14 and >= 626)
     ctx.fillStyle = PAL.cockpitDark;
     ctx.fillRect(0, 0, Math.max(0, 14 - panX), H);
     const rightEdge = Math.round(626 - panX);
     if (rightEdge < W) ctx.fillRect(rightEdge, 0, W - rightEdge, H);
 
-    // Rearview Mirror (Top center at World X = 320)
-    const mirrorX = Math.round(282 - panX);
-    const mirrorY = roofH + 4;
-    if (mirrorX + 76 > 0 && mirrorX < W) {
-      ctx.fillStyle = PAL.cockpitTrim;
-      ctx.fillRect(mirrorX + 34, roofH - 2, 8, 8);
-      ctx.fillStyle = PAL.voidBlack;
-      ctx.fillRect(mirrorX, mirrorY, 76, 22);
-      ctx.strokeStyle = PAL.cockpitLeather;
-      ctx.strokeRect(mirrorX, mirrorY, 76, 22);
-
-      // Rearview mirror hints at closest creature's red eyes if stalking
-      const roofOrClose = state.creatures.find((c) => c.dist < 0.55);
-      if (roofOrClose && !cockpit.blackout) {
-        ctx.fillStyle = PAL.eyeRed;
-        ctx.fillRect(mirrorX + 34, mirrorY + 10, 2, 2);
-        ctx.fillRect(mirrorX + 40, mirrorY + 10, 2, 2);
-      }
-    }
-
-    // Lower Dashboard & Door Panels
-    const dashY = 164 + Math.round(lookUpOffset * 0.5);
+    // Lookout Cabin Wooden/Metal Window Sill (No steering wheel, no rearview mirror — pure claustrophobic observation post!)
+    const sillY = 174;
     ctx.fillStyle = PAL.cockpitLeather;
-    ctx.fillRect(0, dashY - 4, W, 6);
+    ctx.fillRect(0, sillY - 4, W, 6);
     ctx.fillStyle = PAL.dashPanel;
-    ctx.fillRect(0, dashY, W, H - dashY);
+    ctx.fillRect(0, sillY + 2, W, H - (sillY + 2));
+    ctx.fillStyle = PAL.cockpitTrim;
+    ctx.fillRect(0, sillY + 2, W, 2);
 
-    // Left Window Label (World X = 75)
-    text(ctx, '< LEFT WINDOW', 40 - panX, dashY + 8, PAL.amberDim, 8);
-
-    // Right Window & Passenger Film Box (World X = 540)
-    const passX = Math.round(500 - panX);
-    if (passX + 110 > 0 && passX < W) {
-      text(ctx, 'RIGHT WINDOW >', passX + 12, dashY + 8, PAL.amberDim, 8);
-      ctx.fillStyle = PAL.cockpitLeather;
-      ctx.fillRect(passX + 10, dashY + 22, 86, 36);
-      ctx.strokeStyle = PAL.amberDim;
-      ctx.strokeRect(passX + 10, dashY + 22, 86, 36);
-      text(ctx, 'KODAK 1600 ASA', passX + 16, dashY + 27, PAL.amberGlow, 7);
-      text(ctx, 'FILM LEFT: ' + camera.filmLeft, passX + 16, dashY + 40, PAL.polaroidWhite, 8);
-    }
-
-    // Center Dashboard Instruments (World X = 190..450)
-    const dashCenterX = Math.round(320 - panX);
-    const glowColor = cockpit.blackout ? PAL.amberDim : PAL.amberGlow;
-
-    // Steering Wheel (World X = 248)
-    const wheelX = Math.round(248 - panX);
-    if (wheelX + 50 > 0 && wheelX - 50 < W) {
-      ctx.strokeStyle = PAL.cockpitDark;
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(wheelX, dashY + 28, 34, Math.PI * 1.1, Math.PI * 1.9);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-    }
-
-    // Instrument Cluster: Battery, Wipers, Headlights, AM Radio
-    const instX = dashCenterX - 90;
-    ctx.fillStyle = PAL.voidBlack;
-    ctx.fillRect(instX, dashY + 8, 195, 58);
-    ctx.strokeStyle = PAL.cockpitTrim;
-    ctx.strokeRect(instX, dashY + 8, 195, 58);
-
-    // 1. Battery Gauge
-    const battPct = Math.round(cockpit.battery);
-    const battColor = battPct <= 25 ? PAL.dangerRed : glowColor;
-    text(ctx, 'BATT:' + battPct + '%', instX + 6, dashY + 13, battColor, 8);
-    ctx.fillStyle = PAL.amberDim;
-    ctx.fillRect(instX + 6, dashY + 24, 52, 6);
-    ctx.fillStyle = battColor;
-    ctx.fillRect(instX + 6, dashY + 24, Math.round(52 * (battPct / 100)), 6);
-
-    // 2. Wipers & Headlights indicators
-    const wipText = '[1]WIPER:' + (cockpit.wipersOn ? 'ON' : 'OFF');
-    const hlText = '[2]LIGHT:' + (cockpit.headlightsOn ? 'ON' : 'OFF');
-    text(ctx, wipText, instX + 6, dashY + 36, cockpit.wipersOn ? PAL.radioGreen : PAL.amberDim, 7);
-    text(ctx, hlText, instX + 6, dashY + 48, cockpit.headlightsOn ? PAL.radioGreen : PAL.amberDim, 7);
-
-    // 3. Supernatural AM Radio Radar
-    const radioX = instX + 82;
-    text(ctx, 'AM 1610kHz RADAR', radioX, dashY + 13, glowColor, 7);
-    ctx.fillStyle = '#09140d';
-    ctx.fillRect(radioX, dashY + 24, 104, 24);
-    ctx.strokeStyle = PAL.amberDim;
-    ctx.strokeRect(radioX, dashY + 24, 104, 24);
-
-    if (!cockpit.blackout) {
-      const panMarkerX = radioX + 52 + Math.round(cockpit.radioPan * 38);
-      ctx.fillStyle = cockpit.radioIntensity > 0.55 ? PAL.dangerRed : PAL.radioGreen;
-      const barH = Math.max(2, Math.round(cockpit.radioIntensity * 18));
-      for (let b = -3; b <= 3; b++) {
-        const h = Math.max(2, barH - Math.abs(b) * 3);
-        ctx.fillRect(panMarkerX + b * 4, dashY + 36 - Math.round(h / 2), 2, h);
-      }
-      const dirHint = cockpit.radioPan < -0.3 ? '<< L' : cockpit.radioPan > 0.3 ? 'R >>' : 'CTR';
-      text(ctx, dirHint, radioX + 4, dashY + 51, PAL.amberGlow, 7);
-    } else {
-      text(ctx, 'NO POWER', radioX + 26, dashY + 32, PAL.dangerRed, 8);
-    }
-
-    // 4. Clock & Film Top HUD Strip
+    // Diegetic desk quartz clock on the center window sill (00:00 -> 05:00 AM)
     const progress = clamp(night.timeElapsed / Math.max(1, night.duration), 0, 1);
     const hour = Math.floor(progress * 5);
     const min = Math.floor((progress * 300) % 60);
     const clockStr = '0' + hour + ':' + (min < 10 ? '0' + min : min) + ' AM';
-    ctx.fillStyle = 'rgba(7, 8, 13, 0.78)';
-    ctx.fillRect(4, 4, 312, 14);
-    text(ctx, 'NIGHT ' + night.number, 8, 7, PAL.amberGlow, 8);
-    text(ctx, clockStr, 76, 7, PAL.polaroidWhite, 8);
-    text(ctx, 'FILM:' + camera.filmLeft, 146, 7, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
-    text(ctx, 'EVIDENCE:' + night.evidenceCount + '/1', 216, 7, night.evidenceCount > 0 ? PAL.radioGreen : PAL.amberGlow, 8);
+
+    const clockBoxX = Math.round(320 - panX) - 32;
+    if (clockBoxX + 64 > 0 && clockBoxX < W) {
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(clockBoxX, sillY + 14, 64, 18);
+      ctx.strokeStyle = PAL.cockpitTrim;
+      ctx.strokeRect(clockBoxX, sillY + 14, 64, 18);
+      text(ctx, clockStr, clockBoxX + 32, sillY + 19, PAL.quartzGreen, 8, 'center');
+    }
+
+    // Kodak 1600 film box resting on the right window sill
+    const passX = Math.round(502 - panX);
+    if (passX + 100 > 0 && passX < W) {
+      ctx.fillStyle = PAL.cockpitLeather;
+      ctx.fillRect(passX + 10, sillY + 12, 82, 32);
+      ctx.strokeStyle = PAL.amberDim;
+      ctx.strokeRect(passX + 10, sillY + 12, 82, 32);
+      text(ctx, 'KODAK 1600', passX + 16, sillY + 17, PAL.amberGlow, 7);
+      text(ctx, 'EXP: ' + camera.filmLeft, passX + 16, sillY + 29, PAL.polaroidWhite, 8);
+    }
+
+    // Subtle top headliner strip (Night, Time, Film left, Photo count)
+    const reqEv = night.requiredEvidence || (night.settings && night.settings.requiredEvidence) || 2;
+    ctx.fillStyle = 'rgba(7, 8, 13, 0.72)';
+    ctx.fillRect(6, 4, 308, 13);
+    text(ctx, 'NIGHT ' + night.number, 10, 6, PAL.amberDim, 8);
+    text(ctx, clockStr, 86, 6, PAL.polaroidWhite, 8);
+    text(ctx, 'FILM:' + camera.filmLeft, 166, 6, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
+    text(ctx, 'PROOF:' + night.evidenceCount + '/' + reqEv, 238, 6, night.evidenceCount >= reqEv ? PAL.quartzGreen : PAL.amberDim, 8);
+
+    // Peripheral Vision Oppression (Teacher Feedback #3):
+    // When looking at Window A, if an unwatched creature is stalking in adjacent Window B,
+    // its creeping shadow, cold breath fog, and red eye glints loom at the outer edge of your vision!
+    for (const c of state.creatures) {
+      if (C.isCreatureInViewCone(c, state)) continue;
+      if (c.dist >= 0.78) continue;
+      const rect = C.creatureScreenRect(c, panX);
+      const isLeft = rect.eyeX < W / 2;
+      const near = clamp((0.78 - c.dist) / 0.56, 0.14, 1);
+      const edgeX = isLeft ? 0 : W - 22;
+      const bob = Math.round(Math.sin(time * 8 + c.id) * 2);
+      ctx.save();
+      // Cold breath fog on peripheral glass edge
+      ctx.globalAlpha = clamp(near * 0.34, 0.08, 0.38);
+      ctx.fillStyle = PAL.corpsePale;
+      ctx.fillRect(edgeX, 52, 22, 84);
+      // Creeping peripheral dark silhouette peeking from adjacent window
+      const silW = Math.round(10 + near * 10);
+      const silH = Math.round(38 + near * 42);
+      const silX = isLeft ? 0 : W - silW;
+      const silY = Math.round(112 - silH / 2) + bob;
+      ctx.globalAlpha = clamp(0.45 + near * 0.45, 0.45, 0.90);
+      ctx.fillStyle = PAL.creatureShadow;
+      ctx.fillRect(silX, silY, silW, silH);
+      ctx.fillStyle = PAL.creatureRim;
+      ctx.fillRect(isLeft ? silW - 2 : silX, silY, 2, silH);
+      if (c.dist <= state.cfg.lungeDist || (c.glintVisible || 0) > 0 || near > 0.32) {
+        ctx.globalAlpha = clamp(near * 0.88, 0.28, 0.92);
+        ctx.fillStyle = PAL.eyeRed;
+        const rx = isLeft ? Math.max(3, silW - 5) : Math.min(W - 5, silX + 3);
+        ctx.fillRect(rx, silY + 12, 2, 2);
+        ctx.fillRect(rx, silY + 17, 2, 2);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawPolaroidCard(ctx, p, px, py, w, h) {
+    ctx.fillStyle = PAL.polaroidWhite;
+    ctx.fillRect(px, py, w, h);
+    const innerW = w - 10;
+    const innerH = h - 24;
+    ctx.fillStyle = PAL.nightSky;
+    ctx.fillRect(px + 5, py + 5, innerW, innerH);
+
+    if (p && p.dir !== 'NONE') {
+      const midX = px + Math.round(w / 2);
+      const botY = py + 5 + innerH;
+      ctx.fillStyle = PAL.creatureShadow;
+      const silH = Math.round(12 + (p.fill || 0.4) * (innerH - 14));
+      const silW = p.pose === 'COIL' ? 22 : (p.pose === 'LUNGE' ? 20 : 16);
+      const silX = midX - Math.round(silW / 2);
+      ctx.fillRect(silX, botY - silH, silW, silH);
+      if (p.pose === 'LUNGE') {
+        ctx.fillRect(silX - 3, botY - silH - 3, 3, Math.round(silH * 0.6));
+        ctx.fillRect(silX + silW, botY - silH - 3, 3, Math.round(silH * 0.6));
+      }
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(midX - 4, botY - silH + 4, 2, 2);
+      ctx.fillRect(midX + 2, botY - silH + 4, 2, 2);
+    }
+
+    const gColor = !p ? PAL.dangerRed : (p.grade === 'EVIDENCE' ? '#0b7a3e' : p.grade === 'SUSPICIOUS' ? '#9c6200' : PAL.dangerRed);
+    text(ctx, p ? p.grade : 'NONE', px + Math.round(w / 2), py + h - 17, gColor, 8, 'center');
+    text(ctx, p ? (p.score + ' PTS') : '0 PTS', px + Math.round(w / 2), py + h - 9, PAL.voidBlack, 7, 'center');
   }
 
   function drawViewfinderAndPhoto(ctx, state) {
     const { cockpit, camera } = state;
+    const time = state.night ? state.night.timeElapsed : 0;
 
-    // Viewfinder Overlay when aiming
+    // 1. Camera Viewfinder with Pure Blur-to-Sharp Optical Focus (No modern autofocus brackets!)
     if (cockpit.vfActive) {
       const vf = C.getViewfinderRect(state);
       const ready = camera.chargeTimer <= 0 && camera.filmLeft > 0;
-      const vfColor = ready ? PAL.amberGlow : PAL.dangerRed;
+      const targetInfo = C.inspectViewfinderTarget(state);
+      const blur = targetInfo.blurAmount !== undefined ? targetInfo.blurAmount : (1 - (targetInfo.focusRatio || 0));
 
-      ctx.strokeStyle = vfColor;
+      // Heavy dark camera body mask blocking your naked eyes outside the viewfinder
+      ctx.fillStyle = 'rgba(5, 6, 9, 0.90)';
+      ctx.fillRect(0, 18, W, vf.y - 18);
+      ctx.fillRect(0, vf.y + vf.h, W, H - (vf.y + vf.h));
+      ctx.fillRect(0, vf.y, vf.x, vf.h);
+      ctx.fillRect(vf.x + vf.w, vf.y, W - (vf.x + vf.w), vf.h);
+
+      // Out-of-focus optical blur haze inside the viewfinder when target is too far (clears up as it approaches!)
+      if (blur > 0.04) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(18, 26, 40, ' + (blur * 0.34).toFixed(2) + ')';
+        ctx.fillRect(vf.x + 1, vf.y + 1, vf.w - 2, vf.h - 2);
+        // Defocus bokeh / horizontal lens blur bands that dissolve as focus sharpens
+        const bandCount = Math.ceil(blur * 10);
+        ctx.fillStyle = 'rgba(143, 168, 214, ' + (blur * 0.14).toFixed(2) + ')';
+        for (let i = 0; i < bandCount; i++) {
+          const by = vf.y + 4 + ((i * 11 + Math.round(time * 24)) % (vf.h - 10));
+          ctx.fillRect(vf.x + 3, by, vf.w - 6, 2);
+        }
+        ctx.restore();
+      }
+
+      // Clean classic viewfinder border (no modern AF brackets)
+      ctx.strokeStyle = PAL.amberDim;
       ctx.lineWidth = 1;
       ctx.strokeRect(vf.x, vf.y, vf.w, vf.h);
 
-      // Corner brackets & center crosshair
-      const cx = Math.round(vf.x + vf.w / 2);
-      const cy = Math.round(vf.y + vf.h / 2);
-      ctx.fillStyle = vfColor;
-      ctx.fillRect(cx - 6, cy, 13, 1);
-      ctx.fillRect(cx, cy - 6, 1, 13);
-
-      const statusText = camera.chargeTimer > 0
-        ? 'CHARGING FLASH...'
-        : 'READY [SPACE TO SHOOT]';
-      text(ctx, statusText, cx, vf.y + vf.h + 4, vfColor, 8, 'center');
+      // Single physical flash ready LED dot in top-right corner of viewfinder
+      ctx.fillStyle = ready ? PAL.quartzGreen : PAL.dangerRed;
+      ctx.fillRect(vf.x + vf.w - 8, vf.y + 5, 3, 3);
     }
 
-    // Glass Flash Reflection Glare (1s blindness)
+    // Glass Flash Reflection Glare (1s whiteout blindness)
     if (camera.blindTimer > 0) {
       ctx.save();
-      ctx.globalAlpha = clamp(camera.blindTimer / state.cfg.blindTime, 0, 0.92);
+      ctx.globalAlpha = clamp(camera.blindTimer / state.cfg.blindTime, 0, 0.94);
       ctx.fillStyle = PAL.polaroidWhite;
       ctx.fillRect(0, 0, W, H);
       ctx.restore();
@@ -1256,23 +1617,63 @@
       const p = camera.lastPhoto;
       const px = W - 92;
       const py = 24;
-      ctx.fillStyle = PAL.polaroidWhite;
-      ctx.fillRect(px, py, 84, 68);
-      ctx.fillStyle = PAL.nightSky;
-      ctx.fillRect(px + 5, py + 5, 74, 44);
+      drawPolaroidCard(ctx, p, px, py, 84, 68);
+    }
 
-      if (p.dir !== 'NONE') {
-        ctx.fillStyle = PAL.creatureShadow;
-        const silH = Math.round(14 + p.fill * 28);
-        ctx.fillRect(px + 34, py + 49 - silH, 16, silH);
-        ctx.fillStyle = PAL.eyeRed;
-        ctx.fillRect(px + 38, py + 53 - silH, 2, 2);
-        ctx.fillRect(px + 44, py + 53 - silH, 2, 2);
+    // 2. Pillar 2: Entity Psychic Gaze Interference & Signal Blackout (Teacher Feedback #2)
+    // Replaces arbitrary "physiological dry eyes / eyelids closing" with psychic optic nerve contamination from the entity!
+    if ((cockpit.blinkTimer || 0) > 0) {
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(0, 0, W, H);
+      // Violent red/pale psychic static burst during the 0.22s signal blackout!
+      ctx.fillStyle = 'rgba(255, 34, 51, 0.28)';
+      for (let i = 0; i < 8; i++) {
+        const gy = (Math.round(time * 900) + i * 31) % H;
+        ctx.fillRect(0, gy, W, 2);
+      }
+    } else {
+      const dread = cockpit.stareDread || 0;
+      const strain = cockpit.eyeStrain || 0;
+
+      // Psychic Gaze Tunnel & Signal Contamination while locking eyes with the entity
+      if (dread > 0.12 && !cockpit.vfActive) {
+        const gazedCreature = state.creatures.find((c) => C.isCreatureGazed(c, state));
+        const focusX = gazedCreature
+          ? clamp(C.creatureScreenRect(gazedCreature, cockpit.panX).eyeX, 60, W - 60)
+          : W / 2;
+        const sideCurtain = Math.round(dread * 72);
+        const leftWall = Math.max(0, Math.round(focusX - (W / 2 - sideCurtain)));
+        const rightWall = Math.max(0, Math.round(W - (focusX + (W / 2 - sideCurtain))));
+
+        ctx.fillStyle = 'rgba(8, 4, 10, 0.72)';
+        if (leftWall > 0) ctx.fillRect(0, 17, leftWall, H - 17);
+        if (rightWall > 0) ctx.fillRect(W - rightWall, 17, rightWall, H - 17);
       }
 
-      const gColor = p.grade === 'EVIDENCE' ? '#0b7a3e' : p.grade === 'SUSPICIOUS' ? '#9c6200' : PAL.dangerRed;
-      text(ctx, p.grade, px + 42, py + 52, gColor, 8, 'center');
-      text(ctx, p.score + ' PTS', px + 42, py + 60, PAL.voidBlack, 7, 'center');
+      // Escalating crimson psychic interference waves & horizontal VHS signal tears (instead of closing eyelids)
+      if (strain > 0.20) {
+        const ratio = clamp((strain - 0.20) / 0.80, 0, 1);
+        const tearLines = Math.floor(2 + ratio * 22);
+        for (let i = 0; i < tearLines; i++) {
+          const sy = 18 + ((Math.round(time * 430) + i * 23) % (H - 28));
+          const isRed = (i + Math.round(time * 20)) % 3 === 0;
+          ctx.fillStyle = isRed
+            ? 'rgba(255, 34, 51, ' + (0.08 + ratio * 0.28).toFixed(2) + ')'
+            : 'rgba(207, 214, 222, ' + (0.05 + ratio * 0.16).toFixed(2) + ')';
+          const tearW = Math.round(W * (0.35 + ((i * 37) % 65) / 100));
+          const tearX = ((i * 53 + Math.round(time * 310)) % W);
+          ctx.fillRect(tearX, sy, tearW - W, 1 + (ratio > 0.7 && i % 4 === 0 ? 1 : 0));
+          ctx.fillRect(0, sy, tearW, 1);
+        }
+
+        // Crimson psychic border pulse & phantom eye double-vision right before signal overload
+        if (ratio > 0.45) {
+          const borderH = Math.round((ratio - 0.45) * 42);
+          ctx.fillStyle = 'rgba(28, 4, 10, ' + (0.45 + ratio * 0.35).toFixed(2) + ')';
+          ctx.fillRect(0, 17, W, borderH);
+          ctx.fillRect(0, H - borderH, W, borderH);
+        }
+      }
     }
   }
 
@@ -1280,41 +1681,47 @@
     if (state.phase === 'TITLE') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = PAL.amberGlow;
+      ctx.strokeStyle = PAL.amberDim;
       ctx.strokeRect(12, 12, W - 24, H - 24);
 
-      text(ctx, '16-BIT SURVIVAL HORROR', W / 2, 34, PAL.amberDim, 8, 'center');
-      text(ctx, 'EVIDENCE 1989', W / 2, 54, PAL.amberGlow, 18, 'center');
-      text(ctx, 'BLACK RAIN', W / 2, 76, PAL.eyeRed, 12, 'center');
+      text(ctx, '16-BIT SURVIVAL HORROR', W / 2, 28, PAL.amberDim, 8, 'center');
+      text(ctx, 'EVIDENCE 1989', W / 2, 48, PAL.amberGlow, 18, 'center');
+      text(ctx, 'BLACK RAIN', W / 2, 70, PAL.eyeRed, 12, 'center');
 
-      text(ctx, 'YOUR STATION WAGON IS DEAD IN THE STORM.', W / 2, 108, PAL.polaroidWhite, 8, 'center');
-      text(ctx, '"IT" ONLY APPROACHES WHEN NOT WATCHED.', W / 2, 122, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'CAPTURE 1 CLOSE EVIDENCE PHOTO BEFORE 05:00 AM.', W / 2, 136, PAL.amberGlow, 8, 'center');
+      text(ctx, 'DIRECT GAZE FREEZES IT — WATCH ADJACENT WINDOWS IN PERIPHERY.', W / 2, 102, PAL.polaroidWhite, 7, 'center');
+      text(ctx, 'STARING TOO LONG TRIGGERS PSYCHIC BLACKOUT (3 TIMES = FATAL).', W / 2, 116, PAL.eyeGlow, 7, 'center');
+      text(ctx, 'HOLD [SHIFT] TO LURE IT UNTIL BLURRY VIEWFINDER BECOMES SHARP.', W / 2, 130, PAL.amberGlow, 7, 'center');
 
-      text(ctx, '[A/D or L/R] TURN HEAD   [W] LOOK ROOF   [1] WIPERS   [2] LIGHTS', W / 2, 168, PAL.rainStreak, 7, 'center');
-      text(ctx, '[HOLD SHIFT / J] RAISE CAMERA     [SPACE / K] FLASH SHUTTER', W / 2, 182, PAL.rainStreak, 7, 'center');
-      text(ctx, 'PRESS [SPACE] OR CLICK TO ENTER THE CAR', W / 2, 206, PAL.radioGreen, 9, 'center');
+      text(ctx, '[A / D or L / R] TURN HEAD          [HOLD SHIFT] RAISE CAMERA', W / 2, 164, PAL.rainStreak, 7, 'center');
+      text(ctx, '[SPACE / CLICK] FIRE FLASH SHUTTER (4 EXPOSURES)', W / 2, 178, PAL.rainStreak, 7, 'center');
+      text(ctx, 'PRESS [SPACE] OR CLICK TO BEGIN', W / 2, 206, PAL.quartzGreen, 9, 'center');
       return true;
     }
 
     if (state.phase === 'NIGHT_INTRO') {
+      const reqEv = state.night.requiredEvidence || (state.night.number >= 2 ? 3 : 2);
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      text(ctx, state.night.title || ('NIGHT ' + state.night.number), W / 2, 78, PAL.amberGlow, 14, 'center');
+      text(ctx, state.night.title || ('NIGHT ' + state.night.number), W / 2, 78, PAL.amberGlow, 13, 'center');
       text(ctx, state.night.subtitle || '', W / 2, 104, PAL.polaroidWhite, 8, 'center');
-      text(ctx, '4 EXPOSURES. SURVIVE UNTIL 05:00 AM.', W / 2, 132, PAL.rainStreak, 8, 'center');
-      text(ctx, 'PRESS [SPACE] TO BEGIN WATCH', W / 2, 174, PAL.radioGreen, 9, 'center');
+      text(ctx, 'CAPTURE ' + reqEv + ' CLEAR PHOTOS (4 EXPOSURES). SURVIVE UNTIL 05:00 AM.', W / 2, 132, PAL.rainStreak, 7, 'center');
+      text(ctx, 'PRESS [SPACE] TO OPEN YOUR EYES', W / 2, 174, PAL.quartzGreen, 9, 'center');
       return true;
     }
 
     if (state.phase === 'NIGHT_SUMMARY') {
+      const reqEv = state.night.requiredEvidence || (state.night.number >= 2 ? 3 : 2);
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      text(ctx, '05:00 AM — DAWN BREAKS', W / 2, 54, PAL.radioGreen, 12, 'center');
-      text(ctx, 'EVIDENCE SECURED FOR NIGHT ' + state.night.number, W / 2, 82, PAL.amberGlow, 9, 'center');
-      text(ctx, 'EVIDENCE PHOTOS: ' + state.night.evidenceCount, W / 2, 110, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'BATTERY REMAINING: ' + Math.round(state.cockpit.battery) + '%', W / 2, 126, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'PRESS [SPACE] FOR NEXT NIGHT', W / 2, 174, PAL.amberGlow, 9, 'center');
+      const nightPhotos = state.camera.allPhotos.filter((p) => p.night === state.night.number);
+      const bestNightPhoto = nightPhotos.reduce((best, cur) => (!best || cur.score > best.score ? cur : best), null);
+      text(ctx, '05:00 AM — DAWN BREAKS', W / 2, 28, PAL.quartzGreen, 11, 'center');
+      text(ctx, 'EVIDENCE SECURED FOR NIGHT ' + state.night.number, W / 2, 48, PAL.amberGlow, 8, 'center');
+
+      drawPolaroidCard(ctx, bestNightPhoto, Math.round(W / 2 - 42), 68, 84, 68);
+
+      text(ctx, 'CLOSE-UP PHOTOS: ' + state.night.evidenceCount + '/' + reqEv, W / 2, 148, PAL.polaroidWhite, 8, 'center');
+      text(ctx, 'PRESS [SPACE] FOR NEXT NIGHT', W / 2, 192, PAL.amberGlow, 9, 'center');
       return true;
     }
 
@@ -1322,15 +1729,14 @@
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
       if (state.endReason === 'BREACH') {
-        // Terrifying close-up cryptid jump scare
         ctx.fillStyle = PAL.eyeRed;
         ctx.fillRect(108, 72, 28, 18);
         ctx.fillRect(184, 72, 28, 18);
-        text(ctx, 'WINDOW BREACHED (' + (state.breachDir || 'CAR') + ')', W / 2, 126, PAL.dangerRed, 12, 'center');
-        text(ctx, 'THE GLASS SHATTERED IN THE DARK.', W / 2, 148, PAL.polaroidWhite, 8, 'center');
+        text(ctx, 'WINDOW SHATTERED (' + (state.breachDir || 'CABIN') + ')', W / 2, 126, PAL.dangerRed, 12, 'center');
+        text(ctx, 'IT BROKE THROUGH THE OBSERVATION GLASS.', W / 2, 148, PAL.polaroidWhite, 8, 'center');
       } else {
         text(ctx, 'INVESTIGATION FAILED: ' + state.endReason, W / 2, 96, PAL.dangerRed, 11, 'center');
-        text(ctx, 'WITHOUT CLEAR PROOF, NOBODY BELIEVED YOU.', W / 2, 124, PAL.polaroidWhite, 8, 'center');
+        text(ctx, 'WITHOUT CLEAR CLOSE-UP PROOF, NOBODY BELIEVED YOU.', W / 2, 124, PAL.polaroidWhite, 8, 'center');
       }
       text(ctx, 'PRESS [SPACE] TO TRY AGAIN', W / 2, 188, PAL.amberGlow, 9, 'center');
       return true;
@@ -1339,12 +1745,19 @@
     if (state.phase === 'VICTORY') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = PAL.radioGreen;
-      ctx.strokeRect(14, 14, W - 28, H - 28);
-      text(ctx, 'THE EYE WEEKLY — FRONT PAGE EXCLUSIVE!', W / 2, 46, PAL.amberGlow, 10, 'center');
-      text(ctx, 'SURVIVED ALL 3 NIGHTS IN OREGON', W / 2, 74, PAL.radioGreen, 11, 'center');
-      text(ctx, 'YOUR PHOTOGRAPHS PROVED ITS EXISTENCE.', W / 2, 106, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'PRESS [SPACE] TO PLAY AGAIN', W / 2, 184, PAL.amberGlow, 9, 'center');
+      ctx.strokeStyle = PAL.quartzGreen;
+      ctx.strokeRect(10, 10, W - 20, H - 20);
+
+      const bestPhoto = state.camera.allPhotos.reduce((best, cur) => (!best || cur.score > best.score ? cur : best), null);
+      const totalScore = state.camera.allPhotos.reduce((acc, cur) => acc + (cur.score || 0), 0);
+
+      text(ctx, 'THE EYE WEEKLY — FRONT PAGE EXCLUSIVE!', W / 2, 24, PAL.amberGlow, 9, 'center');
+      text(ctx, 'SURVIVED ALL 3 NIGHTS IN OREGON', W / 2, 40, PAL.quartzGreen, 9, 'center');
+
+      drawPolaroidCard(ctx, bestPhoto, Math.round(W / 2 - 42), 58, 84, 68);
+
+      text(ctx, 'YOUR PHOTOGRAPHS PROVED ITS EXISTENCE. (' + totalScore + ' PTS)', W / 2, 142, PAL.polaroidWhite, 7, 'center');
+      text(ctx, 'PRESS [SPACE] TO PLAY AGAIN', W / 2, 194, PAL.amberGlow, 9, 'center');
       return true;
     }
 
@@ -1357,7 +1770,17 @@
       const scaleX = ctx.canvas.width / W;
       const scaleY = (ctx.canvas.height || W) / H;
       ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      const shake = (state.phase === 'PLAYING' && state.cockpit && state.cockpit.shakeTimer > 0)
+        ? state.cockpit.shakeTimer
+        : 0;
+      if (shake > 0) {
+        const t = state.night ? state.night.timeElapsed : 0;
+        const sx = Math.round(Math.sin(t * 95) * shake * 14 * scaleX);
+        const sy = Math.round(Math.cos(t * 73) * shake * 10 * scaleY);
+        ctx.setTransform(scaleX, 0, 0, scaleY, sx, sy);
+      } else {
+        ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      }
     }
     if (drawOverlayScreens(ctx, state)) return;
 
@@ -1374,26 +1797,276 @@
   }
 })(typeof window !== 'undefined' ? window : globalThis);
 
-</script>
-  <script>
-/* EVIDENCE 1989: BLACK RAIN — 16-bit Stereo Audio Synthesizer (Web Audio API). */
+/* EVIDENCE 1989: BLACK RAIN — Pure 16-bit Stereo Spatial Audio & Psychological Horror Music Synthesizer (Web Audio API). */
 (function (root) {
   'use strict';
 
   let ac = null;
   let master = null;
+  let dreadNodes = null;
+  let musicNodes = null;
+
+  // Procedural Horror Music Sequencer & State Tracker
+  const musicState = {
+    noteTimer: 0.4,
+    pulseTimer: 0.25,
+    scrapeTimer: 3.8,
+    stepIdx: 0,
+    pulseIdx: 0,
+    lastPhase: null,
+    wasLightning: false,
+    creatureMem: {}, // id -> { wasGazed, lastPose, stingerCooldown }
+  };
+
+  // D Locrian / Phrygian Dominant Horror Scale (rife with minor 2nds & tritones)
+  const HORROR_MELODY_HZ = [
+    293.66, // D4
+    311.13, // Eb4 (minor 2nd!)
+    415.30, // Ab4 (tritone!)
+    349.23, // F4
+    293.66, // D4
+    277.18, // Db4 (leading tone abyss)
+    311.13, // Eb4
+    466.16, // Bb4
+    415.30, // Ab4 (tritone)
+    587.33, // D5
+    554.37, // Db5
+    622.25, // Eb5
+  ];
+
+  // Low Carpenter/Clock-Tower Stalking Bass Ostinato (Hz)
+  const THRILLER_BASS_HZ = [
+    73.42,  // D2
+    73.42,  // D2
+    77.78,  // Eb2 (minor 2nd)
+    73.42,  // D2
+    51.91,  // Ab1 (tritone drop)
+    73.42,  // D2
+    69.30,  // Db2
+    77.78,  // Eb2
+  ];
+
+  function setParam(param, val, now, timeConstant) {
+    if (!param) return;
+    if (typeof param.setTargetAtTime === 'function') {
+      param.setTargetAtTime(val, now, timeConstant || 0.08);
+    } else if (typeof param.setValueAtTime === 'function') {
+      param.setValueAtTime(val, now);
+    } else {
+      param.value = val;
+    }
+  }
 
   function init() {
     if (ac) {
-      if (ac.state === 'suspended') ac.resume();
+      if (ac.state === 'suspended' && typeof ac.resume === 'function') ac.resume();
       return;
     }
     const AC = root.AudioContext || root.webkitAudioContext;
     if (!AC) return;
     ac = new AC();
     master = ac.createGain();
-    master.gain.value = 0.45;
-    master.connect(ac.destination);
+    master.gain.value = 0.48;
+
+    // Gentle analog limiter/compressor to prevent clipping during intense jump-scares
+    if (typeof ac.createDynamicsCompressor === 'function') {
+      try {
+        const comp = ac.createDynamicsCompressor();
+        if (comp.threshold) comp.threshold.value = -10;
+        if (comp.knee) comp.knee.value = 12;
+        if (comp.ratio) comp.ratio.value = 6;
+        if (comp.attack) comp.attack.value = 0.004;
+        if (comp.release) comp.release.value = 0.18;
+        master.connect(comp);
+        comp.connect(ac.destination);
+      } catch (e) {
+        master.connect(ac.destination);
+      }
+    } else {
+      master.connect(ac.destination);
+    }
+  }
+
+  function ensureDreadNodes() {
+    if (!ac || !master || dreadNodes) return;
+    const subOsc = ac.createOscillator();
+    const tritoneOsc = ac.createOscillator();
+    const shriekOsc = ac.createOscillator();
+    const ringOsc = ac.createOscillator();
+    const ringOsc2 = ac.createOscillator();
+    const tremorLfo = ac.createOscillator();
+    const tremorGain = ac.createGain();
+    const lowFilter = ac.createBiquadFilter();
+    const subGain = ac.createGain();
+    const shriekGain = ac.createGain();
+    const ringGain = ac.createGain();
+
+    subOsc.type = 'triangle';
+    subOsc.frequency.value = 44;
+
+    tritoneOsc.type = 'sawtooth';
+    tritoneOsc.frequency.value = 131;
+
+    // Uncanny minor-9th / sharp-11th upper dissonance that bleeds in as eyelids spasm
+    shriekOsc.type = 'sawtooth';
+    shriekOsc.frequency.value = 277.18;
+
+    // Nervous pitch-tremor LFO (makes the dread chord violently shudder before blinking)
+    tremorLfo.type = 'sine';
+    tremorLfo.frequency.value = 7.5;
+    tremorGain.gain.value = 0;
+
+    lowFilter.type = 'lowpass';
+    lowFilter.frequency.value = 220;
+
+    // Binaural tinnitus pair (beating frequencies inside the skull)
+    ringOsc.type = 'sine';
+    ringOsc.frequency.value = 3180;
+    ringOsc2.type = 'sine';
+    ringOsc2.frequency.value = 3188.5;
+
+    subGain.gain.value = 0;
+    shriekGain.gain.value = 0;
+    ringGain.gain.value = 0;
+
+    if (tritoneOsc.frequency && typeof tremorGain.connect === 'function') {
+      try {
+        tremorLfo.connect(tremorGain);
+        tremorGain.connect(tritoneOsc.frequency);
+        tremorGain.connect(shriekOsc.frequency);
+      } catch (e) { /* fallback for mock nodes */ }
+    }
+
+    subOsc.connect(subGain);
+    tritoneOsc.connect(lowFilter);
+    shriekOsc.connect(shriekGain);
+    shriekGain.connect(lowFilter);
+    lowFilter.connect(subGain);
+
+    ringOsc.connect(ringGain);
+    ringOsc2.connect(ringGain);
+
+    subGain.connect(master);
+    ringGain.connect(master);
+
+    subOsc.start();
+    tritoneOsc.start();
+    shriekOsc.start();
+    tremorLfo.start();
+    ringOsc.start();
+    ringOsc2.start();
+
+    dreadNodes = {
+      subOsc,
+      tritoneOsc,
+      shriekOsc,
+      ringOsc,
+      ringOsc2,
+      tremorLfo,
+      tremorGain,
+      lowFilter,
+      subGain,
+      shriekGain,
+      ringGain,
+    };
+  }
+
+  function ensureMusicNodes() {
+    if (!ac || !master || musicNodes) return;
+    const abyssOsc = ac.createOscillator();
+    const fifthAbyssOsc = ac.createOscillator();
+    const darkPadOsc1 = ac.createOscillator();
+    const darkPadOsc2 = ac.createOscillator();
+    const wobbleLfo = ac.createOscillator();
+    const wobbleGain = ac.createGain();
+    const padFilter = ac.createBiquadFilter();
+    const abyssGain = ac.createGain();
+    const padGain = ac.createGain();
+
+    // Deep 36.7Hz (D1) + 51.9Hz (Ab1 tritone) sub-abyssal foundation
+    abyssOsc.type = 'triangle';
+    abyssOsc.frequency.value = 36.71;
+    fifthAbyssOsc.type = 'sine';
+    fifthAbyssOsc.frequency.value = 51.91;
+
+    // Claustrophobic minor-second dark synth pad (D3 146.8Hz vs Eb3 155.6Hz)
+    darkPadOsc1.type = 'sawtooth';
+    darkPadOsc1.frequency.value = 73.42;
+    darkPadOsc2.type = 'sawtooth';
+    darkPadOsc2.frequency.value = 77.78;
+
+    // Tape-warble LFO (1989 VHS pitch sickness)
+    wobbleLfo.type = 'sine';
+    wobbleLfo.frequency.value = 0.28;
+    wobbleGain.gain.value = 1.6;
+
+    padFilter.type = 'lowpass';
+    padFilter.frequency.value = 195;
+
+    abyssGain.gain.value = 0;
+    padGain.gain.value = 0;
+
+    try {
+      wobbleLfo.connect(wobbleGain);
+      wobbleGain.connect(darkPadOsc1.frequency);
+      wobbleGain.connect(darkPadOsc2.frequency);
+    } catch (e) { /* fallback for mock nodes */ }
+
+    abyssOsc.connect(abyssGain);
+    fifthAbyssOsc.connect(abyssGain);
+    darkPadOsc1.connect(padFilter);
+    darkPadOsc2.connect(padFilter);
+    padFilter.connect(padGain);
+
+    abyssGain.connect(master);
+    padGain.connect(master);
+
+    abyssOsc.start();
+    fifthAbyssOsc.start();
+    darkPadOsc1.start();
+    darkPadOsc2.start();
+    wobbleLfo.start();
+
+    musicNodes = {
+      abyssOsc,
+      fifthAbyssOsc,
+      darkPadOsc1,
+      darkPadOsc2,
+      wobbleLfo,
+      wobbleGain,
+      padFilter,
+      abyssGain,
+      padGain,
+    };
+  }
+
+  // Continuous psychological dread drone + rising binaural tinnitus + pre-blink panic tremor!
+  function updateStareDread(dreadLevel, eyeStrain) {
+    if (!ac) return;
+    ensureDreadNodes();
+    if (!dreadNodes) return;
+
+    const d = Math.max(0, Math.min(1, dreadLevel || 0));
+    const s = Math.max(0, Math.min(1, eyeStrain || 0));
+    const now = ac.currentTime;
+
+    const targetSub = d > 0.04 ? (0.06 + d * d * 0.38) : 0;
+    const targetShriek = s > 0.32 ? ((s - 0.32) * 0.24) : 0;
+    const targetRing = d > 0.12 ? ((d - 0.12) * 0.11 + s * 0.09) : 0;
+
+    setParam(dreadNodes.subGain.gain, targetSub, now, 0.06);
+    setParam(dreadNodes.shriekGain.gain, targetShriek, now, 0.06);
+    setParam(dreadNodes.ringGain.gain, targetRing, now, 0.06);
+
+    setParam(dreadNodes.subOsc.frequency, 42 + d * 24, now, 0.08);
+    // Unsettling downward pitch sag paired with rising minor-9th shriek & binaural tinnitus
+    setParam(dreadNodes.tritoneOsc.frequency, 134 - s * 23, now, 0.08);
+    setParam(dreadNodes.shriekOsc.frequency, 277.18 + s * 34, now, 0.08);
+    setParam(dreadNodes.tremorLfo.frequency, 6.0 + s * 11.0, now, 0.08);
+    setParam(dreadNodes.tremorGain.gain, d * 4.5 + s * s * 14.0, now, 0.08);
+    setParam(dreadNodes.lowFilter.frequency, 190 + d * 480 + s * 320, now, 0.08);
+    setParam(dreadNodes.ringOsc.frequency, 3120 + s * 490, now, 0.08);
+    setParam(dreadNodes.ringOsc2.frequency, 3127.5 + s * 504, now, 0.08);
   }
 
   function connectWithPan(node, panVal) {
@@ -1448,48 +2121,287 @@
     src.start(t);
   }
 
-  function switchClick() {
-    toneStereo('square', 900, 320, 0.035, 0.25, 0, 0);
+  // Haunted 1989 detuned music-box / warped VHS synth note with stereo ghost echo
+  function playHauntedMusicBoxNote(freq, tension, pan) {
+    if (!ac) return;
+    const vol = 0.055 + tension * 0.05;
+    const dur = 0.65 + (1 - tension) * 0.45;
+    const detuneSag = 0.992 - tension * 0.006; // Sickening microtonal flat sag
+    // Primary cold bell
+    toneStereo('triangle', freq, freq * 0.997, dur, vol, pan, 0);
+    // Warped detuned shadow voice
+    toneStereo('sine', freq * 1.007, freq * detuneSag, dur * 1.1, vol * 0.72, -pan * 0.7, 0.03);
+    // Ghostly tape-delay echo on opposite side
+    toneStereo('sine', freq * 0.995, freq * 0.988, dur * 0.9, vol * 0.36, -pan, 0.28);
+    // High tension adds a sinister tritone or minor-second overtone ping
+    if (tension > 0.48) {
+      const interval = tension > 0.75 ? 1.05946 : 1.4142; // minor 2nd or tritone
+      toneStereo('sawtooth', freq * interval, freq * interval * 0.98, 0.32, vol * 0.32, pan * 0.5, 0.08);
+    }
   }
 
-  function wiperSweep() {
-    noiseStereo(0.22, 0.14, 'bandpass', 420, 0, 0);
-    toneStereo('triangle', 110, 75, 0.18, 0.12, 0, 0);
+  // John Carpenter / Clock Tower style dark analog stalking bass ostinato pulse
+  function playThrillerBassPulse(freq, tension, vfActive) {
+    if (!ac) return;
+    const v = 0.09 + tension * 0.14 + (vfActive ? 0.05 : 0);
+    const dur = Math.max(0.12, 0.28 - tension * 0.10);
+    toneStereo('sawtooth', freq * 1.02, freq, dur, v * 0.55, 0, 0);
+    toneStereo('triangle', freq * 0.5, freq * 0.49, dur * 1.15, v * 0.85, 0, 0);
+    if (tension > 0.65 || vfActive) {
+      // Metallic industrial tick on top of the bass pulse when in acute danger
+      noiseStereo(0.035, v * 0.35, 'bandpass', 1650 + tension * 900, (Math.random() - 0.5) * 0.7, 0);
+    }
+  }
+
+  // Eerie waterphone / bowed metal / Psycho string scrape in the dark woods
+  function playWaterphoneScrape(pan, tension) {
+    if (!ac) return;
+    const baseF = 920 + Math.random() * 1100;
+    const endF = baseF * (Math.random() < 0.5 ? 1.38 : 0.72);
+    const dur = 0.55 + Math.random() * 0.55;
+    const v = 0.04 + tension * 0.075;
+    toneStereo('sawtooth', baseF, endF, dur, v * 0.65, pan, 0);
+    toneStereo('sine', baseF * 1.06, endF * 0.97, dur * 1.1, v * 0.8, -pan * 0.6, 0.04);
+    noiseStereo(dur * 0.8, v * 0.45, 'bandpass', baseF, pan, 0.02);
+  }
+
+  // Sudden horror jump-stinger when locking eyes with a close or coiled creature!
+  function gazeDiscoveryStinger(pan, near, pose) {
+    if (!ac) return;
+    const v = 0.22 + 0.45 * Math.max(0, Math.min(1, near || 0.5));
+    // Sub-bass heart-drop boom
+    toneStereo('sine', 110, 28, 0.48, v * 0.95, 0, 0);
+    // Piercing Psycho/Silent-Hill dissonant minor-second shriek cluster
+    toneStereo('sawtooth', 587.33, 554.37, 0.36, v * 0.42, pan, 0);
+    toneStereo('sawtooth', 622.25, 659.25, 0.38, v * 0.42, -pan * 0.6, 0.015);
+    if (pose === 'LUNGE' || near > 0.65) {
+      toneStereo('sawtooth', 1174.66, 1108.73, 0.28, v * 0.38, pan, 0.01);
+      noiseStereo(0.24, v * 0.5, 'highpass', 1900, pan, 0);
+    }
+  }
+
+  // Distant rolling storm thunder & sub-bass dread when lightning flashes
+  function thunderRumble() {
+    if (!ac) return;
+    noiseStereo(0.95, 0.28, 'lowpass', 220, -0.35, 0.05);
+    noiseStereo(1.25, 0.22, 'lowpass', 145, 0.35, 0.22);
+    toneStereo('triangle', 58, 24, 0.9, 0.32, 0, 0.08);
+  }
+
+  // Crushing doom horn & broken music-box dirge on Game Over
+  function gameOverDoomStinger() {
+    if (!ac) return;
+    toneStereo('sawtooth', 73.42, 36.71, 1.4, 0.48, 0, 0);
+    toneStereo('sawtooth', 77.78, 38.89, 1.45, 0.42, -0.3, 0.02);
+    toneStereo('sawtooth', 103.83, 51.91, 1.5, 0.38, 0.3, 0.04);
+    noiseStereo(0.8, 0.35, 'lowpass', 320, 0, 0);
+  }
+
+  // Dynamic, state-reactive 16-bit survival horror soundtrack & stinger director
+  function updateMusic(state, dt) {
+    if (!ac || !state) return;
+    ensureMusicNodes();
+    if (!musicNodes) return;
+
+    const stepDt = Math.max(0.001, Math.min(0.1, dt || 0.016));
+    const now = ac.currentTime;
+    const phase = state.phase || 'TITLE';
+    const cockpit = state.cockpit || {};
+    const nightNum = (state.night && state.night.number) || 1;
+
+    // 1. Phase transition stingers
+    if (musicState.lastPhase !== phase) {
+      if (phase === 'GAME_OVER') {
+        gameOverDoomStinger();
+      } else if (phase === 'PLAYING') {
+        musicState.creatureMem = {};
+      }
+      musicState.lastPhase = phase;
+    }
+
+    // 2. Victory / Summary calm down the oppressive horror drone
+    if (phase === 'VICTORY' || phase === 'NIGHT_SUMMARY') {
+      setParam(musicNodes.abyssGain.gain, 0.03, now, 0.2);
+      setParam(musicNodes.padGain.gain, 0.015, now, 0.2);
+      return;
+    }
+
+    // 3. Title & Night Intro: Eerie 1989 VHS dark ambient & haunted music box
+    if (phase === 'TITLE' || phase === 'NIGHT_INTRO' || phase === 'GAME_OVER') {
+      const introIntensity = phase === 'NIGHT_INTRO' ? 0.42 : (phase === 'GAME_OVER' ? 0.55 : 0.30);
+      setParam(musicNodes.abyssGain.gain, 0.14 + introIntensity * 0.12, now, 0.15);
+      setParam(musicNodes.padGain.gain, 0.06 + introIntensity * 0.06, now, 0.15);
+      setParam(musicNodes.padFilter.frequency, 150 + introIntensity * 140, now, 0.15);
+      setParam(musicNodes.wobbleLfo.frequency, 0.32 + introIntensity * 0.4, now, 0.15);
+      setParam(musicNodes.wobbleGain.gain, 2.2 + introIntensity * 2.5, now, 0.15);
+
+      musicState.noteTimer -= stepDt;
+      if (musicState.noteTimer <= 0) {
+        const hz = HORROR_MELODY_HZ[musicState.stepIdx % HORROR_MELODY_HZ.length];
+        musicState.stepIdx = (musicState.stepIdx + 1) % HORROR_MELODY_HZ.length;
+        const pan = ((musicState.stepIdx % 3) - 1) * 0.55;
+        playHauntedMusicBoxNote(hz * (phase === 'GAME_OVER' ? 0.5 : 1), introIntensity, pan);
+        musicState.noteTimer = phase === 'NIGHT_INTRO' ? 0.62 : 0.92;
+      }
+      return;
+    }
+
+    // 4. PLAYING PHASE: Calculate real-time survival-horror tension (0.0 -> 1.0)
+    const creatures = state.creatures || [];
+    let minDist = 1.0;
+    let hasCoil = false;
+    let hasLunge = false;
+    let closestPan = 0;
+
+    for (let i = 0; i < creatures.length; i++) {
+      const c = creatures[i];
+      const pan = c.dir === 'LEFT' ? -0.82 : c.dir === 'RIGHT' ? 0.82 : 0;
+      if (c.dist < minDist) {
+        minDist = c.dist;
+        closestPan = pan;
+      }
+      if (c.pose === 'COIL') hasCoil = true;
+      if (c.pose === 'LUNGE') hasLunge = true;
+
+      // Track sudden gaze discovery & pose escalation stingers per creature
+      const mem = musicState.creatureMem[c.id] || {
+        wasGazed: false,
+        lastPose: c.pose || 'WAIT',
+        stingerCooldown: 0,
+      };
+      mem.stingerCooldown = Math.max(0, mem.stingerCooldown - stepDt);
+      const isGazedNow = c.state === 'FROZEN';
+
+      if (isGazedNow && !mem.wasGazed && mem.stingerCooldown <= 0) {
+        // Player just turned their head and locked eyes with the creature!
+        if (c.dist <= 0.58 || c.pose === 'COIL' || c.pose === 'LUNGE') {
+          gazeDiscoveryStinger(pan, 1 - c.dist, c.pose);
+          mem.stingerCooldown = 3.2;
+        }
+      } else if (c.pose === 'LUNGE' && mem.lastPose !== 'LUNGE' && mem.stingerCooldown <= 0) {
+        // Creature just entered point-blank LUNGE pose!
+        playWaterphoneScrape(pan, 0.95);
+        mem.stingerCooldown = 2.5;
+      }
+
+      mem.wasGazed = isGazedNow;
+      mem.lastPose = c.pose;
+      musicState.creatureMem[c.id] = mem;
+    }
+
+    // Lightning flash thunder rumble
+    const flashActive = (cockpit.lightningFlash || 0) > 0.20;
+    if (flashActive && !musicState.wasLightning) {
+      thunderRumble();
+    }
+    musicState.wasLightning = flashActive;
+
+    const prox = Math.max(0, Math.min(1, 1 - minDist));
+    const vfBoost = cockpit.vfActive ? 0.22 : 0; // Covering naked eyes with camera = extreme vulnerability!
+    const poseBoost = hasLunge ? 0.32 : (hasCoil ? 0.16 : 0);
+    const dreadBoost = (cockpit.stareDread || 0) * 0.25 + (cockpit.eyeStrain || 0) * 0.20;
+    const nightBoost = (nightNum - 1) * 0.08;
+    const tension = Math.max(0.08, Math.min(1.0, prox * 0.68 + vfBoost + poseBoost + dreadBoost + nightBoost));
+
+    // Modulate continuous dark ambient abyssal drone & minor-second pad
+    const targetAbyss = 0.14 + tension * 0.24;
+    const targetPad = 0.05 + tension * tension * 0.16;
+    setParam(musicNodes.abyssGain.gain, targetAbyss, now, 0.08);
+    setParam(musicNodes.padGain.gain, targetPad, now, 0.08);
+
+    // Subtle upward creep of the abyssal tritone + widening minor-second dissonance as IT gets closer
+    setParam(musicNodes.abyssOsc.frequency, 36.71 + tension * 4.2, now, 0.1);
+    setParam(musicNodes.fifthAbyssOsc.frequency, 51.91 - tension * 2.8, now, 0.1);
+    setParam(musicNodes.darkPadOsc1.frequency, 73.42 + (cockpit.vfActive ? 3.5 : 0), now, 0.1);
+    setParam(musicNodes.darkPadOsc2.frequency, 77.78 + tension * 5.2, now, 0.1);
+    setParam(musicNodes.padFilter.frequency, 140 + tension * 620, now, 0.08);
+    setParam(musicNodes.wobbleLfo.frequency, 0.25 + tension * 3.4, now, 0.1);
+    setParam(musicNodes.wobbleGain.gain, 1.4 + tension * 6.5, now, 0.1);
+
+    // 5. Sequencer Layer A: Haunted Music Box / Cold Horror Bell Motif
+    musicState.noteTimer -= stepDt;
+    if (musicState.noteTimer <= 0) {
+      const idx = musicState.stepIdx % HORROR_MELODY_HZ.length;
+      musicState.stepIdx += 1;
+      let hz = HORROR_MELODY_HZ[idx];
+      // Shift octave up in extreme danger for piercing panic
+      if (tension > 0.78 && idx % 2 === 1) hz *= 2;
+      const notePan = closestPan !== 0 ? closestPan * 0.65 : ((idx % 3) - 1) * 0.6;
+      playHauntedMusicBoxNote(hz, tension, notePan);
+      musicState.noteTimer = Math.max(0.28, 1.35 - tension * 0.92 + (Math.random() - 0.5) * 0.18);
+    }
+
+    // 6. Sequencer Layer B: Thriller Stalking Bass Ostinato (activates when creature approaches or camera is raised)
+    if (tension > 0.28 || cockpit.vfActive) {
+      musicState.pulseTimer -= stepDt;
+      if (musicState.pulseTimer <= 0) {
+        const bHz = THRILLER_BASS_HZ[musicState.pulseIdx % THRILLER_BASS_HZ.length];
+        musicState.pulseIdx += 1;
+        playThrillerBassPulse(bHz, tension, cockpit.vfActive);
+        // Accelerates from 0.46s down to frantic 16th-note 0.14s pulse at point-blank range!
+        musicState.pulseTimer = Math.max(0.14, 0.48 - tension * 0.32);
+      }
+    }
+
+    // 7. Sequencer Layer C: Eerie Bowed Metal / Waterphone Scrapes in the Forest
+    musicState.scrapeTimer -= stepDt;
+    if (musicState.scrapeTimer <= 0) {
+      if (tension > 0.22) {
+        const scrapePan = closestPan !== 0 ? closestPan : (Math.random() < 0.5 ? -0.8 : 0.8);
+        playWaterphoneScrape(scrapePan, tension);
+      }
+      musicState.scrapeTimer = Math.max(1.8, 5.8 - tension * 3.6 + Math.random() * 1.5);
+    }
+  }
+
+  function switchClick() {
+    toneStereo('square', 780, 290, 0.028, 0.18, 0, 0);
   }
 
   function footstepStereo(pan, near) {
-    const v = 0.18 + 0.35 * (near || 0.3);
-    noiseStereo(0.11, v, 'lowpass', 340, pan, 0);
-    toneStereo('sine', 85, 42, 0.09, v * 0.8, pan, 0.02);
+    const n = near || 0.3;
+    const v = 0.22 + 0.42 * n;
+    // Heavy wet mud squelch + ominous sub-thud
+    noiseStereo(0.13, v, 'lowpass', 320 + n * 180, pan, 0);
+    toneStereo('sine', 92, 36, 0.12, v * 0.9, pan, 0.015);
+    if (n > 0.55) {
+      // Faint dragging claw/bone scrape on close footsteps
+      noiseStereo(0.07, v * 0.4, 'bandpass', 1450, pan, 0.05);
+    }
   }
 
   function metalScratchStereo(pan, near) {
-    const v = 0.22 + 0.35 * (near || 0.5);
-    toneStereo('sawtooth', 1400, 2600, 0.18, v * 0.5, pan, 0);
-    noiseStereo(0.2, v * 0.6, 'highpass', 1800, pan, 0.02);
-  }
-
-  function roofThud(near) {
-    const v = 0.4 + 0.4 * (near || 0.5);
-    toneStereo('sine', 95, 32, 0.24, v, 0, 0);
-    noiseStereo(0.14, v * 0.5, 'lowpass', 240, 0, 0.01);
+    const n = near || 0.5;
+    const v = 0.26 + 0.42 * n;
+    // Agonizing fingernails/claws screeching down wet car metal & glass
+    toneStereo('sawtooth', 1480, 2850, 0.22, v * 0.55, pan, 0);
+    toneStereo('sawtooth', 1560, 2710, 0.24, v * 0.48, pan, 0.02);
+    noiseStereo(0.24, v * 0.65, 'highpass', 1850, pan, 0.01);
+    toneStereo('sine', 98, 44, 0.16, v * 0.5, pan, 0);
   }
 
   function shutterBlast() {
     noiseStereo(0.06, 0.75, 'highpass', 900, 0, 0);
     toneStereo('sawtooth', 320, 65, 0.18, 0.45, 0, 0.02);
-    // Capacitor recharge whine
+    // Iconic 1980s camera flash capacitor whine
     toneStereo('sine', 1200, 4200, 1.4, 0.12, 0.25, 0.25);
   }
 
   function monsterScream(pan) {
-    toneStereo('sawtooth', 780, 190, 0.55, 0.55, pan, 0);
-    noiseStereo(0.5, 0.45, 'bandpass', 1100, pan, 0.02);
+    // Terrifying multi-layered dissonant shriek + abyssal sub-roar
+    toneStereo('sawtooth', 860, 175, 0.62, 0.55, pan, 0);
+    toneStereo('sawtooth', 915, 142, 0.65, 0.48, pan, 0.015);
+    toneStereo('square', 1340, 290, 0.48, 0.32, -pan * 0.5, 0.03);
+    toneStereo('sine', 120, 32, 0.58, 0.65, 0, 0);
+    noiseStereo(0.55, 0.52, 'bandpass', 1150, pan, 0.01);
   }
 
   function glassShatter() {
-    noiseStereo(0.45, 0.85, 'highpass', 1500, 0, 0);
-    toneStereo('sawtooth', 620, 95, 0.6, 0.7, 0, 0.05);
+    noiseStereo(0.50, 0.90, 'highpass', 1450, 0, 0);
+    noiseStereo(0.35, 0.70, 'bandpass', 2800, -0.5, 0.04);
+    noiseStereo(0.35, 0.70, 'bandpass', 3200, 0.5, 0.07);
+    toneStereo('sawtooth', 680, 75, 0.68, 0.78, 0, 0.02);
+    toneStereo('sawtooth', 725, 62, 0.72, 0.65, 0, 0.04);
   }
 
   function dawnChime() {
@@ -1499,42 +2411,63 @@
   }
 
   function heartbeat(near) {
-    const v = 0.22 + 0.5 * Math.max(0, Math.min(1, near || 0.4));
-    toneStereo('sine', 68, 42, 0.11, v, 0, 0);
-    toneStereo('sine', 64, 38, 0.09, v * 0.65, 0, 0.16);
+    const n = Math.max(0, Math.min(1, near || 0.4));
+    const v = 0.26 + 0.54 * n;
+    // Visceral chest-cavity lub-dub with eerie sub-resonance
+    toneStereo('sine', 72, 38, 0.12, v, 0, 0);
+    toneStereo('triangle', 108, 46, 0.08, v * 0.45, 0, 0.01);
+    toneStereo('sine', 66, 34, 0.10, v * 0.75, 0, 0.15);
+    if (n > 0.65) {
+      // High-panic ragged breath gasp layered with heartbeat
+      noiseStereo(0.12, (n - 0.65) * 0.35, 'bandpass', 950, 0, 0.22);
+    }
   }
 
   function rainAmbience(intensity) {
     const mult = Math.max(0.5, Math.min(2.2, intensity || 1.0));
-    noiseStereo(0.42, 0.055 * mult, 'bandpass', 680, 0, 0);
+    noiseStereo(0.46, 0.055 * mult, 'bandpass', 660, 0, 0);
+    // Subtle eerie wind howl through the pine needles
+    noiseStereo(0.48, 0.032 * mult, 'lowpass', 260, (Math.random() - 0.5) * 0.6, 0.02);
   }
 
   function branchSnapStereo(pan, near) {
-    const v = 0.2 + 0.35 * (near || 0.4);
-    noiseStereo(0.05, v, 'highpass', 1400, pan, 0);
-    toneStereo('triangle', 290, 95, 0.06, v * 0.7, pan, 0.01);
+    const v = 0.24 + 0.42 * (near || 0.4);
+    noiseStereo(0.055, v, 'highpass', 1350, pan, 0);
+    toneStereo('triangle', 310, 88, 0.07, v * 0.78, pan, 0.01);
+    toneStereo('sawtooth', 165, 52, 0.11, v * 0.55, pan, 0.02);
   }
 
-  function feintVanish(pan) {
-    toneStereo('sine', 620, 140, 0.28, 0.25, pan, 0);
-    noiseStereo(0.24, 0.22, 'bandpass', 1600, pan, 0);
+  function blinkLurch(pan, near) {
+    const v = 0.42 + 0.48 * (near || 0.5);
+    // Terrifying split-second blackout lurch: sub-suction + bone-snap + dissonant sting
+    toneStereo('sine', 125, 28, 0.22, v * 0.95, 0, 0);
+    toneStereo('sawtooth', 415.30, 293.66, 0.19, v * 0.55, pan || 0, 0.01);
+    noiseStereo(0.18, v * 0.85, 'lowpass', 540, pan || 0, 0.01);
+    noiseStereo(0.09, v * 0.72, 'highpass', 1650, pan || 0, 0.05);
   }
 
-  function updateRadio(pan, intensity, blackout) {
-    if (!ac || blackout || intensity <= 0.35) return;
-    if (Math.random() < intensity * 0.18) {
-      noiseStereo(0.04, intensity * 0.16, 'bandpass', 1200 + Math.random() * 1400, pan, 0);
-    }
+  function windowSlamStereo(pan) {
+    // Visceral point-blank impact against the car window glass + horror brass/violin stab!
+    toneStereo('sine', 150, 24, 0.42, 0.98, pan || 0, 0);
+    toneStereo('sawtooth', 920, 115, 0.32, 0.62, pan || 0, 0.005);
+    toneStereo('sawtooth', 985, 108, 0.34, 0.56, -(pan || 0) * 0.5, 0.015);
+    noiseStereo(0.32, 0.92, 'bandpass', 920, pan || 0, 0);
+    noiseStereo(0.22, 0.68, 'highpass', 2250, pan || 0, 0.03);
+  }
+
+  function afLockBeep() {
+    // Crisp 1989 SLR camera electronic focus-confirmation double pip
+    toneStereo('sine', 1980, 1980, 0.045, 0.16, 0, 0);
+    toneStereo('sine', 2480, 2480, 0.055, 0.18, 0, 0.055);
   }
 
   function playEvent(ev) {
     if (!ev) return;
     switch (ev.type) {
       case 'SWITCH_CLICK': switchClick(); break;
-      case 'WIPER_SWEEP': wiperSweep(); break;
+      case 'AF_LOCK': afLockBeep(); break;
       case 'FOOTSTEP': footstepStereo(ev.pan, ev.near); break;
       case 'METAL_SCRATCH': metalScratchStereo(ev.pan, ev.near); break;
-      case 'ROOF_THUD': roofThud(ev.near); break;
       case 'SHUTTER_BLAST': shutterBlast(); break;
       case 'MONSTER_SCREAM':
         monsterScream(ev.dir === 'LEFT' ? -0.8 : ev.dir === 'RIGHT' ? 0.8 : 0);
@@ -1544,7 +2477,8 @@
       case 'HEARTBEAT': heartbeat(ev.near); break;
       case 'RAIN_AMBIENCE': rainAmbience(ev.intensity); break;
       case 'BRANCH_SNAP': branchSnapStereo(ev.pan, ev.near); break;
-      case 'FEINT_VANISH': feintVanish(ev.pan); break;
+      case 'BLINK_LURCH': blinkLurch(ev.pan, ev.near); break;
+      case 'WINDOW_SLAM': windowSlamStereo(ev.pan); break;
       default: break;
     }
   }
@@ -1552,11 +2486,11 @@
   const API = {
     init,
     playEvent,
+    updateStareDread,
+    updateMusic,
     switchClick,
-    wiperSweep,
     footstepStereo,
     metalScratchStereo,
-    roofThud,
     shutterBlast,
     monsterScream,
     glassShatter,
@@ -1564,8 +2498,8 @@
     heartbeat,
     rainAmbience,
     branchSnapStereo,
-    feintVanish,
-    updateRadio,
+    blinkLurch,
+    windowSlamStereo,
   };
 
   root.Evidence16BitAudio = API;
@@ -1588,22 +2522,24 @@
       if (params.autostart === '1') {
         C.startNight(state, Number(params.night) || 1);
         state.creatures[0].dir = 'FRONT';
-        state.creatures[0].dist = 0.35;
-        state.cockpit.vfActive = true;
+        state.creatures[0].dist = 0.42;
       }
 
       const keys = {};
-      let pendingWipers = false;
-      let pendingLights = false;
       let pendingShoot = false;
       let pendingAction = false;
       let mouseAimToggle = false;
+      let btnLeftHold = false;
+      let btnRightHold = false;
+
+      window.addEventListener('pointerdown', () => A.init(), { passive: true });
 
       window.addEventListener('keydown', (e) => {
         A.init();
         keys[e.code] = true;
-        if (e.code === 'Digit1' || e.code === 'KeyQ') pendingWipers = true;
-        if (e.code === 'Digit2' || e.code === 'KeyE' || e.code === 'KeyS') pendingLights = true;
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyJ') {
+          mouseAimToggle = false;
+        }
         if (e.code === 'Space' || e.code === 'KeyK' || e.code === 'Enter') {
           e.preventDefault();
           pendingShoot = true;
@@ -1622,23 +2558,30 @@
         } else {
           pendingAction = true;
           if (state.phase === 'PLAYING') {
-            state.cockpit.vfActive = true;
-            mouseAimToggle = true;
             pendingShoot = true;
           }
         }
       });
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      document.getElementById('btnWipers').addEventListener('click', () => { A.init(); pendingWipers = true; });
-      document.getElementById('btnLights').addEventListener('click', () => { A.init(); pendingLights = true; });
-      document.getElementById('btnRoof').addEventListener('click', () => { A.init(); keys._roofToggle = !keys._roofToggle; });
-      document.getElementById('btnAim').addEventListener('click', () => { A.init(); mouseAimToggle = !mouseAimToggle; });
+      function bindHold(el, setFlag) {
+        el.addEventListener('mousedown', () => { A.init(); setFlag(true); });
+        el.addEventListener('mouseup', () => setFlag(false));
+        el.addEventListener('mouseleave', () => setFlag(false));
+        el.addEventListener('touchstart', (e) => { e.preventDefault(); A.init(); setFlag(true); });
+        el.addEventListener('touchend', () => setFlag(false));
+      }
+
+      const btnLeftEl = document.getElementById('btnLeft');
+      const btnRightEl = document.getElementById('btnRight');
+      const btnAimEl = document.getElementById('btnAim');
+
+      bindHold(btnLeftEl, (v) => { btnLeftHold = v; });
+      bindHold(btnRightEl, (v) => { btnRightHold = v; });
+      btnAimEl.addEventListener('click', () => { A.init(); mouseAimToggle = !mouseAimToggle; });
       document.getElementById('btnShoot').addEventListener('click', () => {
         A.init();
         pendingAction = true;
-        state.cockpit.vfActive = true;
-        mouseAimToggle = true;
         pendingShoot = true;
       });
 
@@ -1647,18 +2590,21 @@
         const dt = Math.min(0.1, (now - lastTime) / 1000);
         lastTime = now;
 
+        const leftActive = Boolean(keys.KeyA || keys.ArrowLeft || btnLeftHold);
+        const rightActive = Boolean(keys.KeyD || keys.ArrowRight || btnRightHold);
+        const aimActive = Boolean(keys.ShiftLeft || keys.ShiftRight || keys.KeyJ || mouseAimToggle);
+
+        btnLeftEl.classList.toggle('active', leftActive);
+        btnRightEl.classList.toggle('active', rightActive);
+        btnAimEl.classList.toggle('active', aimActive);
+
         const input = {
-          left: Boolean(keys.KeyA || keys.ArrowLeft),
-          right: Boolean(keys.KeyD || keys.ArrowRight),
-          lookUp: Boolean(keys.KeyW || keys.ArrowUp || keys._roofToggle),
-          aim: Boolean(keys.ShiftLeft || keys.ShiftRight || keys.KeyJ || mouseAimToggle),
-          toggleWipers: pendingWipers,
-          toggleHeadlights: pendingLights,
+          left: leftActive,
+          right: rightActive,
+          aim: aimActive,
           shoot: pendingShoot,
           action: pendingAction,
         };
-        pendingWipers = false;
-        pendingLights = false;
         pendingShoot = false;
         pendingAction = false;
 
@@ -1667,8 +2613,11 @@
           A.playEvent(ev);
         }
         if (state.phase === 'PLAYING') {
-          A.updateRadio(state.cockpit.radioPan, state.cockpit.radioIntensity, state.cockpit.blackout);
+          A.updateStareDread(state.cockpit.stareDread, state.cockpit.eyeStrain);
+        } else {
+          A.updateStareDread(0, 0);
         }
+        A.updateMusic(state, dt);
 
         R.draw(ctx, state);
         requestAnimationFrame(frame);
@@ -1679,3 +2628,4 @@
   </script>
 </body>
 </html>
+
