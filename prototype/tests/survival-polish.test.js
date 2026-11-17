@@ -41,6 +41,16 @@ test('Phase 1 anti-cheese: holding SHIFT on a far WAIT creature (> 0.62) slows a
   assert.equal(c.pose, 'WAIT');
   assert.ok(0.80 - c.dist < 0.032, `expected slow far lure (< 0.032), got ${0.80 - c.dist}`);
   assert.ok(c.offsetX > 12, `expected lateral drift away from center, got offsetX=${c.offsetX}`);
+
+  // Releasing SHIFT snaps the unwatched creature into COIL; raising SHIFT again causes fast COIL approach (> 0.05 in 0.5s)
+  C.step(s, { aim: false }, 0.1);
+  assert.equal(c.pose, 'COIL');
+  const distBeforeCoilApproach = c.dist;
+  C.step(s, { aim: true }, 0.5);
+  assert.ok(
+    distBeforeCoilApproach - c.dist > 0.05,
+    `expected fast COIL approach (> 0.05 in 0.5s), got ${distBeforeCoilApproach - c.dist}`
+  );
 });
 
 test('Securing required EVIDENCE transitions to SURVIVAL subPhase (Flashlight mode) at >= 03:00 AM instead of ending night early', () => {
@@ -160,6 +170,51 @@ test('inspectFlashlightTarget returns closest overlapping target, inBlastRange, 
   assert.ok(farHit.illumination >= 0.12 && farHit.illumination < 1);
 });
 
+test('Night 3 side-window beam isolation: panX=0 beam hits LEFT only and never lights or blasts adjacent FRONT creature', () => {
+  const { C, R } = loadHtmlModules();
+  const s = C.createGame(C.makeConfig(), 406);
+  C.startNight(s, 3);
+  s.night.subPhase = 'SURVIVAL';
+  s.cockpit.toolMode = 'FLASHLIGHT';
+  s.cockpit.panX = 0; // Aiming directly at LEFT window (beamRect.x = 24..128)
+  s.cockpit.lightningFlash = 0;
+
+  const cLeft = s.creatures[0];
+  const cFront = s.creatures[1];
+  cLeft.dir = 'LEFT';
+  cLeft.dist = 0.36;
+  cLeft.offsetX = 0;
+  cFront.dir = 'FRONT';
+  cFront.dist = 0.36;
+  cFront.offsetX = -30;
+
+  assert.equal(C.isCreatureInFlashlightBeam(cLeft, s), true);
+  assert.equal(C.isCreatureInFlashlightBeam(cFront, s), false);
+
+  // Even when vfActive is ON at panX=0, adjacent FRONT creature (x >= 260) must NOT be lit by the LEFT beam
+  s.cockpit.vfActive = true;
+  const ctxBefore = makeMockCtx();
+  R.draw(ctxBefore, s);
+  const frontLitCalls = ctxBefore.calls.filter(
+    (k) =>
+      k.op === 'fillRect' &&
+      (k.fillStyle === R.PAL.corpsePale || k.fillStyle === R.PAL.creatureRim) &&
+      k.x >= 200 &&
+      k.y >= 24 &&
+      k.y <= 165
+  );
+  assert.equal(frontLitCalls.length, 0, 'adjacent FRONT creature outside beamRect must not be lit by LEFT beam');
+
+  C.step(s, { aim: true, shoot: true }, 0.02);
+  assert.equal(cLeft.dist, s.cfg.retreatDist, 'aimed LEFT creature should be blasted back to retreatDist');
+  assert.notEqual(cLeft.dir, 'LEFT');
+  assert.equal(cFront.dir, 'FRONT', 'adjacent FRONT creature across pillar must stay in FRONT');
+  assert.ok(
+    cFront.dist > 0.34 && cFront.dist !== s.cfg.retreatDist,
+    `adjacent FRONT creature must not be blasted/relocated, got dist=${cFront.dist}`
+  );
+});
+
 test('SURVIVAL banner timer initializes to 3.5s, counts down, and surviving until dawn clears night with 0 film', () => {
   const { C } = loadHtmlModules();
   const s = C.createGame(C.makeConfig({ nightDuration: 75 }), 506);
@@ -232,15 +287,29 @@ test('SURVIVAL renderer: unlit creature draws only red eyes (no creatureRim body
   c.offsetX = 0;
   s.cockpit.panX = 160;
 
-  // 1. Flashlight OFF (vfActive = false): only red eyes in pitch black, no pale sclera/teeth body reveal
+  // 1. Flashlight OFF (vfActive = false): only red eyes in pitch black, no creatureRim and no pale sclera/teeth body reveal
   s.cockpit.vfActive = false;
   const ctxOff = makeMockCtx();
   R.draw(ctxOff, s);
   const paleCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
+  const rimCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.creatureRim && k.y >= 24 && k.y <= 165);
+  const eyeCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.eyeRed && k.y >= 24 && k.y <= 165);
   assert.equal(paleCallsOff.length, 0, 'unlit creature in SURVIVAL must not reveal pale face/hands without flashlight');
+  assert.equal(rimCallsOff.length, 0, 'unlit creature in SURVIVAL must not draw creatureRim without flashlight');
+  assert.ok(eyeCallsOff.length >= 2, 'unlit creature in SURVIVAL must draw red eyes in pitch darkness');
 
-  // 2. Flashlight ON (vfActive = true) at dist 0.36 (<= 0.42): reveals pale features inside circular beam, NO red strokeRect warning
+  // 2. Flashlight ON (vfActive = true) at far range (dist 0.60 > 0.42): draws creatureRim silhouette, NO corpsePale reveal
+  c.dist = 0.60;
   s.cockpit.vfActive = true;
+  const ctxFar = makeMockCtx();
+  R.draw(ctxFar, s);
+  const rimCallsFar = ctxFar.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.creatureRim && k.y >= 24 && k.y <= 165);
+  const paleCallsFar = ctxFar.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
+  assert.ok(rimCallsFar.length > 0, 'far-range flashlight beam must draw creatureRim silhouette');
+  assert.equal(paleCallsFar.length, 0, 'far-range flashlight beam (> 0.42) must not reveal corpsePale face/teeth');
+
+  // 3. Flashlight ON (vfActive = true) at dist 0.36 (<= 0.42): reveals pale features inside circular beam, NO red strokeRect warning
+  c.dist = 0.36;
   const ctxOn = makeMockCtx();
   R.draw(ctxOn, s);
   const paleCallsOn = ctxOn.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);

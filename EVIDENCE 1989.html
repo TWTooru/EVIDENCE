@@ -313,6 +313,17 @@
     return { x, y, w, h };
   }
 
+  function isCreatureInFlashlightBeam(c, state) {
+    if (!c || !state) return false;
+    const vf = getViewfinderRect(state);
+    const cx = vf.x + vf.w / 2;
+    const cy = vf.y + vf.h / 2;
+    const r = (state.cfg && state.cfg.flashlightBeamR) || 52;
+    const beamRect = { x: cx - r, y: cy - r, w: r * 2, h: r * 2 };
+    const rect = creatureScreenRect(c, state.cockpit.panX);
+    return overlapArea(beamRect, rect) > 0;
+  }
+
   function gradePhoto(c, state) {
     if (!c) {
       return {
@@ -440,11 +451,9 @@
   }
 
   function inspectFlashlightTarget(state) {
-    const vf = getViewfinderRect(state);
     let bestCreature = null;
     for (const c of state.creatures) {
-      const rect = creatureScreenRect(c, state.cockpit.panX);
-      if (overlapArea(vf, rect) > 0) {
+      if (isCreatureInFlashlightBeam(c, state)) {
         if (!bestCreature || c.dist < bestCreature.dist) {
           bestCreature = c;
         }
@@ -632,11 +641,8 @@
       camera.blindTimer = cfg.flashlightBlindTime;
       state.events.push({ type: 'FLASHLIGHT_BLAST' });
 
-      const vf = getViewfinderRect(state);
       for (const c of state.creatures) {
-        const rect = creatureScreenRect(c, cockpit.panX);
-        const inAimedWindow = (rect.eyeX >= DIRECT_GAZE_MIN_X && rect.eyeX <= DIRECT_GAZE_MAX_X) || overlapArea(vf, rect) > 0;
-        if (inAimedWindow) {
+        if (isCreatureInFlashlightBeam(c, state)) {
           if (c.dist <= cfg.flashlightDist) {
             state.events.push({ type: 'MONSTER_SCREAM', dir: c.dir });
             relocateCreature(c, state);
@@ -1082,6 +1088,7 @@
     creatureWorldPos,
     creatureScreenRect,
     getViewfinderRect,
+    isCreatureInFlashlightBeam,
     isCreatureInViewCone,
     isCreatureInPeripheral,
     isCreatureGazed,
@@ -1234,7 +1241,7 @@
     const isSurvival = state.night && state.night.subPhase === 'SURVIVAL';
     const inCone = C.isCreatureInViewCone(c, state);
     const inPeripheral = C.isCreatureInPeripheral ? C.isCreatureInPeripheral(c, state) : !inCone;
-    const litByFlashlight = isSurvival && cockpit.vfActive && inCone && state.camera.blindTimer <= 0;
+    const litByFlashlight = isSurvival && cockpit.vfActive && state.camera.blindTimer <= 0 && C.isCreatureInFlashlightBeam(c, state);
     const lightningLit = (cockpit.lightningFlash || 0) > 0.12;
     const time = state.night ? state.night.timeElapsed : 0;
 
@@ -1832,8 +1839,9 @@
 
     // Glass Flash Reflection Glare (1s whiteout blindness)
     if (camera.blindTimer > 0) {
+      const maxBlind = Math.max(0.01, isSurvival ? state.cfg.flashlightBlindTime : state.cfg.blindTime);
       ctx.save();
-      ctx.globalAlpha = clamp(camera.blindTimer / state.cfg.blindTime, 0, 0.94);
+      ctx.globalAlpha = clamp(camera.blindTimer / maxBlind, 0, 0.94);
       ctx.fillStyle = PAL.polaroidWhite;
       ctx.fillRect(0, 0, W, H);
       ctx.restore();
@@ -2871,7 +2879,7 @@
         pendingAction = false;
 
         C.step(state, input, dt);
-        const isSurvival = Boolean(state.night && state.night.subPhase === 'SURVIVAL');
+        const isSurvival = Boolean(state.phase === 'PLAYING' && state.night && state.night.subPhase === 'SURVIVAL');
         if (isSurvival !== lastIsSurvival) {
           lastIsSurvival = isSurvival;
           btnAimEl.textContent = isSurvival ? '[SHIFT] 舉起手電筒（聚光顯影）' : '[SHIFT] 舉起相機（遮住肉眼）';
