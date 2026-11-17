@@ -273,49 +273,68 @@ function makeMockCtx() {
   };
 }
 
-test('SURVIVAL renderer: unlit creature draws only red eyes (no creatureRim body highlight), flashlight beam illuminates body and pale face at <= 0.42 with ZERO red warning border', () => {
+test('EVIDENCE & SURVIVAL renderer: Phase 1 naked eye is always blurry (only camera focuses it); Phase 2 SURVIVAL renders ONLY red eyes (never body, even with flashlight) that grow larger as creature approaches', () => {
   const { C, R } = loadHtmlModules();
   const s = C.createGame(C.makeConfig(), 401);
   C.startNight(s, 1);
-  s.night.subPhase = 'SURVIVAL';
-  s.cockpit.toolMode = 'FLASHLIGHT';
-  s.cockpit.lightningFlash = 0;
 
   const c = s.creatures[0];
   c.dir = 'FRONT';
-  c.dist = 0.36; // Inside flashlight effective range (<= 0.42)
+  c.dist = 0.28; // Inside camera focus distance (<= 0.34)
   c.offsetX = 0;
   s.cockpit.panX = 160;
+  s.cockpit.lightningFlash = 0;
 
-  // 1. Flashlight OFF (vfActive = false): only red eyes in pitch black, no creatureRim and no pale sclera/teeth body reveal
+  // 1. Phase 1 (EVIDENCE) with naked eye (vfActive = false): creature body is ALWAYS blurry (ghosted alpha < 1, no corpsePale/corpseDim facial details)
   s.cockpit.vfActive = false;
-  const ctxOff = makeMockCtx();
-  R.draw(ctxOff, s);
-  const paleCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
-  const rimCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.creatureRim && k.y >= 24 && k.y <= 165);
-  const eyeCallsOff = ctxOff.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.eyeRed && k.y >= 24 && k.y <= 165);
-  assert.equal(paleCallsOff.length, 0, 'unlit creature in SURVIVAL must not reveal pale face/hands without flashlight');
-  assert.equal(rimCallsOff.length, 0, 'unlit creature in SURVIVAL must not draw creatureRim without flashlight');
-  assert.ok(eyeCallsOff.length >= 2, 'unlit creature in SURVIVAL must draw red eyes in pitch darkness');
+  const ctxNaked = makeMockCtx();
+  R.draw(ctxNaked, s);
+  const paleNaked = ctxNaked.calls.filter((k) => k.op === 'fillRect' && (k.fillStyle === R.PAL.corpsePale || k.fillStyle === R.PAL.corpseDim) && k.y >= 24 && k.y <= 165);
+  const shadowNaked = ctxNaked.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.creatureShadow && k.y >= 24 && k.y <= 165);
+  assert.ok(shadowNaked.length > 0, 'Phase 1 naked eye draws blurry ghosted shadow passes');
+  assert.ok(shadowNaked.every((k) => k.alpha < 0.6), 'Phase 1 naked eye shadow passes are all ghosted/translucent (never 100% sharp)');
+  assert.equal(paleNaked.length, 0, 'Phase 1 naked eye must never resolve sharp corpsePale/corpseDim features without camera');
 
-  // 2. Flashlight ON (vfActive = true) at far range (dist 0.60 > 0.42): draws creatureRim silhouette, NO corpsePale reveal
-  c.dist = 0.60;
+  // 2. Phase 1 (EVIDENCE) with camera viewfinder raised (vfActive = true) at focus distance: resolves sharp features!
   s.cockpit.vfActive = true;
-  const ctxFar = makeMockCtx();
-  R.draw(ctxFar, s);
-  const rimCallsFar = ctxFar.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.creatureRim && k.y >= 24 && k.y <= 165);
-  const paleCallsFar = ctxFar.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
-  assert.ok(rimCallsFar.length > 0, 'far-range flashlight beam must draw creatureRim silhouette');
-  assert.equal(paleCallsFar.length, 0, 'far-range flashlight beam (> 0.42) must not reveal corpsePale face/teeth');
+  const ctxCam = makeMockCtx();
+  R.draw(ctxCam, s);
+  const paleCam = ctxCam.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
+  assert.ok(paleCam.length > 0, 'Phase 1 camera viewfinder at focus distance resolves sharp corpsePale features');
 
-  // 3. Flashlight ON (vfActive = true) at dist 0.36 (<= 0.42): reveals pale features inside circular beam, NO red strokeRect warning
+  // 3. Phase 2 (SURVIVAL): pitch darkness without camera — NEVER draws creature body (even with vfActive=true or lightning), ONLY red eyes!
+  s.night.subPhase = 'SURVIVAL';
+  s.cockpit.toolMode = 'FLASHLIGHT';
+  s.cockpit.lightningFlash = 0.25;
+
+  // Far range (dist = 0.75): small 2x2 red eyes, zero body
+  c.dist = 0.75;
+  s.cockpit.vfActive = false;
+  const ctxSurvFar = makeMockCtx();
+  R.draw(ctxSurvFar, s);
+  const bodyFar = ctxSurvFar.calls.filter(
+    (k) => k.op === 'fillRect' && (k.fillStyle === R.PAL.creatureShadow || k.fillStyle === R.PAL.creatureRim || k.fillStyle === R.PAL.corpsePale) && k.y >= 24 && k.y <= 165
+  );
+  const eyesFar = ctxSurvFar.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.eyeRed && k.y >= 24 && k.y <= 165);
+  assert.equal(bodyFar.length, 0, 'SURVIVAL mode must never draw creature body');
+  assert.equal(eyesFar.length, 2, 'far creature in SURVIVAL draws 2 small red eye dots');
+  assert.equal(eyesFar[0].w, 2, 'far red eyes are 2px wide');
+
+  // Close range (dist = 0.36 <= 0.42) with flashlight raised (vfActive = true): still zero body, but red eyes grow large (>= 6px) with hot eyeGlow core!
   c.dist = 0.36;
-  const ctxOn = makeMockCtx();
-  R.draw(ctxOn, s);
-  const paleCallsOn = ctxOn.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.corpsePale && k.y >= 24 && k.y <= 165);
-  assert.ok(paleCallsOn.length > 0, 'flashlight beam at close range (<= 0.42) must illuminate pale sclera/teeth/hands');
+  s.cockpit.vfActive = true;
+  const ctxSurvClose = makeMockCtx();
+  R.draw(ctxSurvClose, s);
+  const bodyClose = ctxSurvClose.calls.filter(
+    (k) => k.op === 'fillRect' && (k.fillStyle === R.PAL.creatureShadow || k.fillStyle === R.PAL.creatureRim || k.fillStyle === R.PAL.corpsePale) && k.y >= 24 && k.y <= 165
+  );
+  const eyesClose = ctxSurvClose.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.eyeRed && k.y >= 24 && k.y <= 165);
+  const glowClose = ctxSurvClose.calls.filter((k) => k.op === 'fillRect' && k.fillStyle === R.PAL.eyeGlow && k.y >= 24 && k.y <= 165);
+  assert.equal(bodyClose.length, 0, 'SURVIVAL mode must NEVER draw creature body even when holding SHIFT');
+  assert.ok(eyesClose.some((k) => k.w >= 6), 'close red eyes (<= 0.42) grow large (>= 6px wide)');
+  assert.equal(glowClose.length, 2, 'close red eyes (<= 0.42) gain blazing eyeGlow inner cores');
 
-  const redBorderCalls = ctxOn.calls.filter(
+  const redBorderCalls = ctxSurvClose.calls.filter(
     (k) => (k.op === 'strokeRect' || k.op === 'stroke') && (k.strokeStyle === R.PAL.dangerRed || k.strokeStyle === R.PAL.eyeRed)
   );
   assert.equal(redBorderCalls.length, 0, 'must NEVER draw a red warning border/frame in SURVIVAL flashlight mode');
