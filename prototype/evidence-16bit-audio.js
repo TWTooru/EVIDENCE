@@ -1,9 +1,10 @@
-/* EVIDENCE 1989: BLACK RAIN — 16-bit Stereo Audio Synthesizer (Web Audio API). */
+/* EVIDENCE 1989: BLACK RAIN — Pure 16-bit Stereo Spatial Audio Synthesizer (Web Audio API). */
 (function (root) {
   'use strict';
 
   let ac = null;
   let master = null;
+  let dreadNodes = null;
 
   function init() {
     if (ac) {
@@ -14,8 +15,69 @@
     if (!AC) return;
     ac = new AC();
     master = ac.createGain();
-    master.gain.value = 0.45;
+    master.gain.value = 0.48;
     master.connect(ac.destination);
+  }
+
+  function ensureDreadNodes() {
+    if (!ac || !master || dreadNodes) return;
+    const subOsc = ac.createOscillator();
+    const tritoneOsc = ac.createOscillator();
+    const ringOsc = ac.createOscillator();
+    const lowFilter = ac.createBiquadFilter();
+    const subGain = ac.createGain();
+    const ringGain = ac.createGain();
+
+    subOsc.type = 'triangle';
+    subOsc.frequency.value = 46;
+
+    tritoneOsc.type = 'sawtooth';
+    tritoneOsc.frequency.value = 131;
+
+    lowFilter.type = 'lowpass';
+    lowFilter.frequency.value = 220;
+
+    ringOsc.type = 'sine';
+    ringOsc.frequency.value = 3180;
+
+    subGain.gain.value = 0;
+    ringGain.gain.value = 0;
+
+    subOsc.connect(subGain);
+    tritoneOsc.connect(lowFilter);
+    lowFilter.connect(subGain);
+    ringOsc.connect(ringGain);
+
+    subGain.connect(master);
+    ringGain.connect(master);
+
+    subOsc.start();
+    tritoneOsc.start();
+    ringOsc.start();
+
+    dreadNodes = { subOsc, tritoneOsc, ringOsc, lowFilter, subGain, ringGain };
+  }
+
+  // Continuous psychological dread drone + rising tinnitus ear-ringing while locking eyes with IT!
+  function updateStareDread(dreadLevel, eyeStrain) {
+    if (!ac) return;
+    ensureDreadNodes();
+    if (!dreadNodes) return;
+
+    const d = Math.max(0, Math.min(1, dreadLevel || 0));
+    const s = Math.max(0, Math.min(1, eyeStrain || 0));
+    const now = ac.currentTime;
+
+    const targetSub = d > 0.05 ? (d * d * 0.34) : 0;
+    const targetRing = d > 0.15 ? ((d - 0.15) * 0.13 + s * 0.08) : 0;
+
+    dreadNodes.subGain.gain.setTargetAtTime(targetSub, now, 0.06);
+    dreadNodes.ringGain.gain.setTargetAtTime(targetRing, now, 0.06);
+    dreadNodes.subOsc.frequency.setTargetAtTime(45 + d * 22, now, 0.08);
+    // Unsettling downward pitch sag paired with rising tinnitus creates visceral dread
+    dreadNodes.tritoneOsc.frequency.setTargetAtTime(134 - s * 19, now, 0.08);
+    dreadNodes.lowFilter.frequency.setTargetAtTime(180 + d * 360, now, 0.08);
+    dreadNodes.ringOsc.frequency.setTargetAtTime(3120 + s * 460, now, 0.08);
   }
 
   function connectWithPan(node, panVal) {
@@ -71,36 +133,25 @@
   }
 
   function switchClick() {
-    toneStereo('square', 900, 320, 0.035, 0.25, 0, 0);
-  }
-
-  function wiperSweep() {
-    noiseStereo(0.22, 0.14, 'bandpass', 420, 0, 0);
-    toneStereo('triangle', 110, 75, 0.18, 0.12, 0, 0);
+    toneStereo('square', 780, 290, 0.028, 0.18, 0, 0);
   }
 
   function footstepStereo(pan, near) {
-    const v = 0.18 + 0.35 * (near || 0.3);
+    const v = 0.20 + 0.38 * (near || 0.3);
     noiseStereo(0.11, v, 'lowpass', 340, pan, 0);
     toneStereo('sine', 85, 42, 0.09, v * 0.8, pan, 0.02);
   }
 
   function metalScratchStereo(pan, near) {
-    const v = 0.22 + 0.35 * (near || 0.5);
+    const v = 0.24 + 0.38 * (near || 0.5);
     toneStereo('sawtooth', 1400, 2600, 0.18, v * 0.5, pan, 0);
     noiseStereo(0.2, v * 0.6, 'highpass', 1800, pan, 0.02);
-  }
-
-  function roofThud(near) {
-    const v = 0.4 + 0.4 * (near || 0.5);
-    toneStereo('sine', 95, 32, 0.24, v, 0, 0);
-    noiseStereo(0.14, v * 0.5, 'lowpass', 240, 0, 0.01);
   }
 
   function shutterBlast() {
     noiseStereo(0.06, 0.75, 'highpass', 900, 0, 0);
     toneStereo('sawtooth', 320, 65, 0.18, 0.45, 0, 0.02);
-    // Capacitor recharge whine
+    // Iconic 1980s camera flash capacitor whine
     toneStereo('sine', 1200, 4200, 1.4, 0.12, 0.25, 0.25);
   }
 
@@ -132,31 +183,32 @@
   }
 
   function branchSnapStereo(pan, near) {
-    const v = 0.2 + 0.35 * (near || 0.4);
+    const v = 0.22 + 0.38 * (near || 0.4);
     noiseStereo(0.05, v, 'highpass', 1400, pan, 0);
     toneStereo('triangle', 290, 95, 0.06, v * 0.7, pan, 0.01);
   }
 
-  function feintVanish(pan) {
-    toneStereo('sine', 620, 140, 0.28, 0.25, pan, 0);
-    noiseStereo(0.24, 0.22, 'bandpass', 1600, pan, 0);
+  function blinkLurch(pan, near) {
+    const v = 0.36 + 0.44 * (near || 0.5);
+    toneStereo('sine', 95, 34, 0.16, v * 0.9, 0, 0);
+    noiseStereo(0.16, v * 0.8, 'lowpass', 520, pan || 0, 0.02);
+    noiseStereo(0.08, v * 0.65, 'highpass', 1550, pan || 0, 0.06);
   }
 
-  function updateRadio(pan, intensity, blackout) {
-    if (!ac || blackout || intensity <= 0.35) return;
-    if (Math.random() < intensity * 0.18) {
-      noiseStereo(0.04, intensity * 0.16, 'bandpass', 1200 + Math.random() * 1400, pan, 0);
-    }
+  function windowSlamStereo(pan) {
+    // Visceral point-blank impact against the car window glass!
+    toneStereo('sine', 135, 26, 0.34, 0.95, pan || 0, 0);
+    toneStereo('sawtooth', 880, 140, 0.24, 0.52, pan || 0, 0.01);
+    noiseStereo(0.28, 0.88, 'bandpass', 950, pan || 0, 0);
+    noiseStereo(0.18, 0.62, 'highpass', 2200, pan || 0, 0.04);
   }
 
   function playEvent(ev) {
     if (!ev) return;
     switch (ev.type) {
       case 'SWITCH_CLICK': switchClick(); break;
-      case 'WIPER_SWEEP': wiperSweep(); break;
       case 'FOOTSTEP': footstepStereo(ev.pan, ev.near); break;
       case 'METAL_SCRATCH': metalScratchStereo(ev.pan, ev.near); break;
-      case 'ROOF_THUD': roofThud(ev.near); break;
       case 'SHUTTER_BLAST': shutterBlast(); break;
       case 'MONSTER_SCREAM':
         monsterScream(ev.dir === 'LEFT' ? -0.8 : ev.dir === 'RIGHT' ? 0.8 : 0);
@@ -166,7 +218,8 @@
       case 'HEARTBEAT': heartbeat(ev.near); break;
       case 'RAIN_AMBIENCE': rainAmbience(ev.intensity); break;
       case 'BRANCH_SNAP': branchSnapStereo(ev.pan, ev.near); break;
-      case 'FEINT_VANISH': feintVanish(ev.pan); break;
+      case 'BLINK_LURCH': blinkLurch(ev.pan, ev.near); break;
+      case 'WINDOW_SLAM': windowSlamStereo(ev.pan); break;
       default: break;
     }
   }
@@ -174,11 +227,10 @@
   const API = {
     init,
     playEvent,
+    updateStareDread,
     switchClick,
-    wiperSweep,
     footstepStereo,
     metalScratchStereo,
-    roofThud,
     shutterBlast,
     monsterScream,
     glassShatter,
@@ -186,8 +238,8 @@
     heartbeat,
     rainAmbience,
     branchSnapStereo,
-    feintVanish,
-    updateRadio,
+    blinkLurch,
+    windowSlamStereo,
   };
 
   root.Evidence16BitAudio = API;

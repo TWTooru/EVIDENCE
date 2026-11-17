@@ -33,10 +33,10 @@ function createMockCtx() {
   };
 }
 
-test('PAL defines a rich 16-bit era color palette and draw renders all game phases cleanly', () => {
+test('PAL defines a rich 16-bit palette and draw renders all phases with car as pure visual frame (zero car HUD / zero QTE prompts)', () => {
   assert.ok(Object.keys(R.PAL).length >= 12);
   const ctx = createMockCtx();
-  const s = C.createGame(C.makeConfig({ debug: 1 }), 99);
+  const s = C.createGame(C.makeConfig(), 99);
 
   // 1. TITLE phase
   R.draw(ctx, s);
@@ -47,33 +47,52 @@ test('PAL defines a rich 16-bit era color palette and draw renders all game phas
   R.draw(ctx, s);
   assert.ok(ctx.calls.some((c) => c.op === 'fillText' && c.str.includes('NIGHT 1')));
 
-  // 3. PLAYING phase (panning, wipers, headlights, viewfinder, roof lookUp, photo popup)
+  // 3. PLAYING phase: check zero car-chore UI, zero tension bars, and zero range QTE text
   C.step(s, { action: true }, 0.01);
-  s.cockpit.wipersOn = true;
-  s.cockpit.headlightsOn = true;
-  s.cockpit.vfActive = true;
+  s.creatures[0].dir = 'FRONT';
+  s.creatures[0].dist = 0.30;
+  s.creatures[0].pose = 'LUNGE';
+  s.cockpit.panX = 160;
+  ctx.calls.length = 0;
   R.draw(ctx, s);
 
-  // Trigger shutter flash and draw blind glare + polaroid popup
-  s.creatures[0].dir = 'FRONT';
-  s.creatures[0].dist = 0.25;
+  const renderedTexts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.str).join(' | ');
+  assert.equal(renderedTexts.includes('BATT'), false, 'must not render battery HUD');
+  assert.equal(renderedTexts.includes('WIPER'), false, 'must not render wiper HUD');
+  assert.equal(renderedTexts.includes('LIGHT'), false, 'must not render headlight HUD');
+  assert.equal(renderedTexts.includes('RADAR'), false, 'must not render AM radar HUD');
+  assert.equal(renderedTexts.includes('EVIDENCE RANGE'), false, 'must not render QTE range prompt');
+
+  // Aiming viewfinder + shooting Polaroid
+  ctx.calls.length = 0;
+  s.cockpit.vfActive = true;
+  R.draw(ctx, s);
+  const vfTexts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.str).join(' | ');
+  assert.equal(vfTexts.includes('EVIDENCE RANGE'), false, 'viewfinder must not spoil range with text QTE');
+
+  // Heavy eyelids & involuntary blink render purely visually with zero UI text
+  s.cockpit.vfActive = false;
+  s.cockpit.eyeStrain = 0.85;
+  ctx.calls.length = 0;
+  R.draw(ctx, s);
+  const strainTexts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.str).join(' | ');
+  assert.equal(strainTexts.includes('TENSION'), false, 'eye strain must not render any text bar');
+
+  s.cockpit.blinkTimer = 0.15;
+  ctx.calls.length = 0;
+  R.draw(ctx, s);
+  assert.ok(ctx.calls.some((c) => c.op === 'fillRect' && c.w === 320 && c.h === 240), 'blink covers full screen in black');
+
+  s.cockpit.blinkTimer = 0;
   C.step(s, { aim: true, shoot: true }, 0.01);
   R.draw(ctx, s);
 
-  // Roof lookUp rendering
-  s.cockpit.lookUp = true;
-  s.creatures[0].dir = 'ROOF';
-  R.draw(ctx, s);
-
-  // 4. NIGHT_SUMMARY phase
+  // 4. NIGHT_SUMMARY, GAME_OVER, VICTORY phases
   s.phase = 'NIGHT_SUMMARY';
   R.draw(ctx, s);
-
-  // 5. GAME_OVER and VICTORY phases
   s.phase = 'GAME_OVER';
   s.endReason = 'BREACH';
   R.draw(ctx, s);
-
   s.phase = 'VICTORY';
   R.draw(ctx, s);
 });
@@ -87,11 +106,8 @@ test('HiDPI integer scaling: draw applies crisp 4x transform and disables smooth
 
   const s = C.createGame(C.makeConfig(), 12);
   C.startNight(s, 1);
-  s.cockpit.rainBlur = 0.75; // Triggers WIPER NEEDED warning & crisp raindrop pattern
   R.draw(ctx, s);
 
   assert.deepEqual(transformArgs, [4, 0, 0, 4, 0, 0]);
   assert.equal(ctx.imageSmoothingEnabled, false);
-  assert.ok(ctx.calls.some((c) => c.op === 'fillText' && c.str.includes('WIPER')));
 });
-

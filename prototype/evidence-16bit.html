@@ -42,8 +42,8 @@
       width: min(800px, 95vw, calc(76vh * (4 / 3)));
       aspect-ratio: 4 / 3;
       image-rendering: pixelated;
-      border: 4px solid #26222b;
-      box-shadow: 0 0 32px rgba(255, 34, 51, 0.2), 0 0 12px rgba(0, 0, 0, 0.9);
+      border: 4px solid #221f28;
+      box-shadow: 0 0 32px rgba(255, 34, 51, 0.16), 0 0 12px rgba(0, 0, 0, 0.92);
       background: #07080d;
       display: block;
       cursor: crosshair;
@@ -55,10 +55,10 @@
       justify-content: center;
     }
     .deck-btn {
-      background: #1c1920;
+      background: #16141a;
       color: #ffb000;
-      border: 1px solid #443b4f;
-      padding: 6px 12px;
+      border: 1px solid #3c3447;
+      padding: 6px 14px;
       font-family: inherit;
       font-size: 12px;
       font-weight: bold;
@@ -73,31 +73,30 @@
       font-size: 12px;
       color: #8fa8d6;
       text-align: center;
-      line-height: 1.6;
-      max-width: 800px;
+      line-height: 1.65;
+      max-width: 780px;
     }
     .help span { color: #ffb000; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="header-bar">
-    <span class="badge">16-BIT WAR</span>
+    <span class="badge">16-BIT</span>
     <span>EVIDENCE 1989: BLACK RAIN</span>
   </div>
 
   <canvas id="screen" width="1280" height="960"></canvas>
 
   <div class="quick-deck">
-    <button class="deck-btn" id="btnWipers">[1] 雨刷 WIPERS</button>
-    <button class="deck-btn" id="btnLights">[2] 車前大燈 HEADLIGHTS</button>
-    <button class="deck-btn" id="btnRoof">[W] 抬頭看天窗 ROOF</button>
-    <button class="deck-btn" id="btnAim">[SHIFT] 舉起相機 AIM</button>
-    <button class="deck-btn" id="btnShoot">[SPACE] 快門閃光 SHOOT</button>
+    <button class="deck-btn" id="btnLeft">[◀ A] 左轉頭</button>
+    <button class="deck-btn" id="btnRight">[D ▶] 右轉頭</button>
+    <button class="deck-btn" id="btnAim">[SHIFT] 舉起相機（遮住肉眼）</button>
+    <button class="deck-btn" id="btnShoot">[SPACE] 快門閃光</button>
   </div>
 
   <div class="help">
-    [<span>A / D 或 ← / →</span>] 左右轉頭環顧車窗　[<span>W / ↑</span>] 抬頭看天窗/後照鏡　[<span>1</span>] 雨刷開關　[<span>2</span>] 車前大燈<br>
-    [<span>按住 SHIFT 或 J / 右鍵</span>] 舉起相機對焦　[<span>SPACE 或 K / 左鍵</span>] 扣下快門引爆閃光燈
+    [<span>A / D 或 ← / →</span>] 左右轉頭看車窗（<b>睜眼看著它＝絕對死寂不動</b>；但死盯越久耳鳴越重，一旦<b>撐不住眨眼它就會貼臉撲窗</b>！）<br>
+    [<span>按住 SHIFT / J / 右鍵</span>] 舉起相機貼臉構圖（<b>遮住肉眼視線，它會趁機朝鏡頭逼近</b>）　[<span>SPACE / K / 左鍵</span>] 引爆閃光快門！
   </div>
 
   <script src="./evidence-16bit-core.js"></script>
@@ -116,22 +115,19 @@
       if (params.autostart === '1') {
         C.startNight(state, Number(params.night) || 1);
         state.creatures[0].dir = 'FRONT';
-        state.creatures[0].dist = 0.35;
-        state.cockpit.vfActive = true;
+        state.creatures[0].dist = 0.42;
       }
 
       const keys = {};
-      let pendingWipers = false;
-      let pendingLights = false;
       let pendingShoot = false;
       let pendingAction = false;
       let mouseAimToggle = false;
+      let btnLeftHold = false;
+      let btnRightHold = false;
 
       window.addEventListener('keydown', (e) => {
         A.init();
         keys[e.code] = true;
-        if (e.code === 'Digit1' || e.code === 'KeyQ') pendingWipers = true;
-        if (e.code === 'Digit2' || e.code === 'KeyE' || e.code === 'KeyS') pendingLights = true;
         if (e.code === 'Space' || e.code === 'KeyK' || e.code === 'Enter') {
           e.preventDefault();
           pendingShoot = true;
@@ -150,23 +146,30 @@
         } else {
           pendingAction = true;
           if (state.phase === 'PLAYING') {
-            state.cockpit.vfActive = true;
-            mouseAimToggle = true;
             pendingShoot = true;
           }
         }
       });
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      document.getElementById('btnWipers').addEventListener('click', () => { A.init(); pendingWipers = true; });
-      document.getElementById('btnLights').addEventListener('click', () => { A.init(); pendingLights = true; });
-      document.getElementById('btnRoof').addEventListener('click', () => { A.init(); keys._roofToggle = !keys._roofToggle; });
-      document.getElementById('btnAim').addEventListener('click', () => { A.init(); mouseAimToggle = !mouseAimToggle; });
+      function bindHold(el, setFlag) {
+        el.addEventListener('mousedown', () => { A.init(); setFlag(true); });
+        el.addEventListener('mouseup', () => setFlag(false));
+        el.addEventListener('mouseleave', () => setFlag(false));
+        el.addEventListener('touchstart', (e) => { e.preventDefault(); A.init(); setFlag(true); });
+        el.addEventListener('touchend', () => setFlag(false));
+      }
+
+      const btnLeftEl = document.getElementById('btnLeft');
+      const btnRightEl = document.getElementById('btnRight');
+      const btnAimEl = document.getElementById('btnAim');
+
+      bindHold(btnLeftEl, (v) => { btnLeftHold = v; });
+      bindHold(btnRightEl, (v) => { btnRightHold = v; });
+      btnAimEl.addEventListener('click', () => { A.init(); mouseAimToggle = !mouseAimToggle; });
       document.getElementById('btnShoot').addEventListener('click', () => {
         A.init();
         pendingAction = true;
-        state.cockpit.vfActive = true;
-        mouseAimToggle = true;
         pendingShoot = true;
       });
 
@@ -175,18 +178,21 @@
         const dt = Math.min(0.1, (now - lastTime) / 1000);
         lastTime = now;
 
+        const leftActive = Boolean(keys.KeyA || keys.ArrowLeft || btnLeftHold);
+        const rightActive = Boolean(keys.KeyD || keys.ArrowRight || btnRightHold);
+        const aimActive = Boolean(keys.ShiftLeft || keys.ShiftRight || keys.KeyJ || mouseAimToggle);
+
+        btnLeftEl.classList.toggle('active', leftActive);
+        btnRightEl.classList.toggle('active', rightActive);
+        btnAimEl.classList.toggle('active', aimActive);
+
         const input = {
-          left: Boolean(keys.KeyA || keys.ArrowLeft),
-          right: Boolean(keys.KeyD || keys.ArrowRight),
-          lookUp: Boolean(keys.KeyW || keys.ArrowUp || keys._roofToggle),
-          aim: Boolean(keys.ShiftLeft || keys.ShiftRight || keys.KeyJ || mouseAimToggle),
-          toggleWipers: pendingWipers,
-          toggleHeadlights: pendingLights,
+          left: leftActive,
+          right: rightActive,
+          aim: aimActive,
           shoot: pendingShoot,
           action: pendingAction,
         };
-        pendingWipers = false;
-        pendingLights = false;
         pendingShoot = false;
         pendingAction = false;
 
@@ -195,7 +201,9 @@
           A.playEvent(ev);
         }
         if (state.phase === 'PLAYING') {
-          A.updateRadio(state.cockpit.radioPan, state.cockpit.radioIntensity, state.cockpit.blackout);
+          A.updateStareDread(state.cockpit.stareDread, state.cockpit.eyeStrain);
+        } else {
+          A.updateStareDread(0, 0);
         }
 
         R.draw(ctx, state);

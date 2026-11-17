@@ -11,14 +11,14 @@
     vfW: 90,              // 觀景窗寬
     vfH: 110,             // 觀景窗高
     vfSpeed: 120,         // 觀景窗移動速度（px/s）
-    approach: 0.06,       // 沒被注視時每秒靠近的距離（dist 單位）
+    approach: 0.06,       // 沒被注視時每秒靠近的基準距離（dist 單位）
     lateral: 30,          // 沒被注視時的橫移速度（px/s）
     nightTime: 60,        // 每晚秒數
     film: 3,              // 每晚底片數
     charge: 2,            // 閃光充電秒數
     blind: 1,             // 閃光後致盲秒數
     glint: 1.5,           // 框外紅眼閃光間隔（秒）
-    glintOn: 0.15,        // 紅眼閃光持續秒數
+    glintOn: 0.25,        // 紅眼閃光持續秒數
     retreat: 0.95,        // 閃光後被逼退到的最遠距離上限
     retreatStep: 0.35,    // 每次閃光逼退的距離增量
     minH: 16,             // 最遠時的身高（px）
@@ -26,6 +26,12 @@
     evidenceFill: 0.85,
     evidenceComplete: 0.95,
     suspiciousScore: 40,
+    gazeTopRatio: 0.26,   // 觀景窗頂部非壓制區比例（近距離時必須下拉框才能拍全身，進而解除紅眼凍結）
+    maxStare: 3.2,        // 連續死盯上限秒數（集滿觸發破框閃身 twitch）
+    waitMult: 0.55,       // WAIT 觀望態下的慢速試探倍率（誘敵深入）
+    coilMult: 1.65,       // COIL 蓄力態下的暴衝倍率
+    lungeMult: 1.45,      // LUNGE 貼臉態（最後拉框瞬間）的撲擊倍率
+    lungeDist: 0.35,      // 進入 LUNGE 貼臉獵殺態的距離門檻
     debug: 0,
   };
 
@@ -58,9 +64,9 @@
   function creatureRect(c, cfg) {
     const near = 1 - c.dist;
     const h = cfg.minH + (cfg.maxH - cfg.minH) * near;
-    const w = h * 0.3;
+    const w = h * 0.38;
     const feetY = HORIZON_Y + (FEET_NEAR_Y - HORIZON_Y) * near;
-    return { x: c.x - w / 2, y: feetY - h, w, h };
+    return { x: c.x - w / 2, y: feetY - h, w, h, pose: c.pose || 'WAIT', tension: c.tension || 0 };
   }
 
   function eyePoint(c, cfg) {
@@ -72,8 +78,14 @@
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
   }
 
+  function gazeBox(vf, cfg) {
+    const ratio = cfg && typeof cfg.gazeTopRatio === 'number' ? cfg.gazeTopRatio : DEFAULTS.gazeTopRatio;
+    const topPad = vf.h * ratio;
+    return { x: vf.x, y: vf.y + topPad, w: vf.w, h: vf.h - topPad };
+  }
+
   function isFrozen(c, vf, blindTimer, cfg) {
-    return blindTimer <= 0 && pointInRect(eyePoint(c, cfg), vf);
+    return blindTimer <= 0 && pointInRect(eyePoint(c, cfg), gazeBox(vf, cfg));
   }
 
   function overlapArea(a, b) {
@@ -110,7 +122,19 @@
   }
 
   function spawnCreature(rng, cfg, dist) {
-    return { x: randomX(rng), dist, targetX: randomX(rng), glintTimer: cfg.glint, glintVisible: 0, frozen: false };
+    return {
+      x: randomX(rng),
+      dist,
+      targetX: randomX(rng),
+      glintTimer: cfg.glint,
+      glintVisible: 0,
+      frozen: false,
+      pose: 'WAIT',
+      tension: 0,
+      coilBoost: 1,
+      unwatchedTime: 0,
+      lookAwayCount: 0,
+    };
   }
 
   function createGame(cfg, seed) {
@@ -133,6 +157,10 @@
       settings: null,
       heartTimer: 1,
       snapTimer: 3,
+      snapX: SCREEN / 2,
+      glintX: SCREEN / 2,
+      rustleTimer: 0,
+      rustleX: SCREEN / 2,
       endReason: null,
     };
   }
@@ -150,13 +178,15 @@
     s.flashTimer = 0;
     s.photos = [];
     s.lastPhotoTimer = 0;
+    s.rustleTimer = 0;
     s.endReason = null;
     s.creatures = [];
     for (let i = 0; i < s.settings.count; i++) s.creatures.push(spawnCreature(s.rng, cfg, 0.9));
-    // 開場先把觀景窗對準第一隻，讓玩家第一眼就看到「框住它就不動」
+    // 開場先把觀景窗凝視區對準第一隻，讓玩家第一眼就看到「框住它就不動」
     const eye = eyePoint(s.creatures[0], cfg);
     s.vf.x = clamp(eye.x - s.vf.w / 2, 0, SCREEN - s.vf.w);
     s.vf.y = clamp(eye.y - s.vf.h / 2, 0, SCREEN - s.vf.h);
+    s.creatures[0].frozen = isFrozen(s.creatures[0], s.vf, 0, cfg);
   }
 
   function endGame(s, reason, events) {
@@ -185,8 +215,13 @@
     const stepBack = (s.settings && s.settings.retreatStep) || cfg.retreatStep;
     for (const c of s.creatures) {
       c.dist = Math.min(cfg.retreat, c.dist + stepBack);
-      c.x = randomX(s.rng);
       c.targetX = randomX(s.rng);
+      c.glintTimer = Math.min(c.glintTimer, 0.35);
+      c.pose = 'WAIT';
+      c.tension = 0;
+      c.coilBoost = 1;
+      c.unwatchedTime = 0;
+      c.lookAwayCount = 0;
     }
     events.push('shot');
     if (photo.grade === 'EVIDENCE') {
@@ -214,17 +249,92 @@
     s.blindTimer = Math.max(0, s.blindTimer - dt);
     s.flashTimer = Math.max(0, s.flashTimer - dt);
     s.lastPhotoTimer = Math.max(0, s.lastPhotoTimer - dt);
+    s.rustleTimer = Math.max(0, (s.rustleTimer || 0) - dt);
     if (s.charge < 1) s.charge = Math.min(1, s.charge + dt / cfg.charge);
 
     let anyMoving = false;
+    let maxTension = 0;
+    const movingXs = [];
+
     for (const c of s.creatures) {
+      const wasFrozen = Boolean(c.frozen);
       c.frozen = isFrozen(c, s.vf, s.blindTimer, cfg);
       c.glintVisible = Math.max(0, c.glintVisible - dt);
-      if (c.frozen) continue;
+
+      if (c.frozen) {
+        if (!wasFrozen && (c.unwatchedTime || 0) > 0.15 && c.dist > cfg.lungeDist) {
+          c.pose = 'COIL';
+        }
+        if (c.dist <= cfg.lungeDist) {
+          c.pose = 'LUNGE';
+        }
+        c.unwatchedTime = 0;
+        c.tension = clamp((c.tension || 0) + dt / cfg.maxStare, 0, 1);
+        if (c.tension >= 0.5 && c.pose === 'WAIT') {
+          c.pose = 'COIL';
+        }
+        if (c.tension > maxTension) maxTension = c.tension;
+
+        // 支柱二：連續死盯超過極限（maxStare），怪物強制破框閃身並逼近一步
+        if (c.tension >= 1) {
+          c.tension = 0;
+          c.coilBoost = 1.35;
+          c.pose = c.dist <= cfg.lungeDist ? 'LUNGE' : 'COIL';
+          c.dist = Math.max(0.04, c.dist - 0.08);
+          const shiftDir = c.x > SCREEN / 2 ? -1 : 1;
+          c.x = clamp(c.x + shiftDir * (s.vf.w * 0.85), 40, SCREEN - 40);
+          c.targetX = randomX(s.rng);
+          c.frozen = false;
+          s.snapX = c.x;
+          s.rustleX = c.x;
+          s.rustleTimer = 0.65;
+          events.push('twitch');
+          events.push('snap');
+        }
+        continue;
+      }
+
+      // 視線剛移開：若先前累積了高凝視躁動，轉化為暴衝倍率
+      if (wasFrozen) {
+        c.lookAwayCount = (c.lookAwayCount || 0) + 1;
+        c.unwatchedTime = 0;
+        if ((c.tension || 0) >= 0.35) {
+          c.coilBoost = 1 + c.tension * 1.25;
+          if (c.pose === 'WAIT') c.pose = 'COIL';
+        }
+        c.tension = 0;
+      } else {
+        c.tension = Math.max(0, (c.tension || 0) - dt * 0.5);
+      }
+
       anyMoving = true;
-      c.dist = Math.max(0, c.dist - st.approach * dt);
+      movingXs.push(c.x);
+      c.unwatchedTime = (c.unwatchedTime || 0) + dt;
+
+      // 支柱一：依三階段姿態（WAIT 觀望誘敵 / COIL 前傾暴衝 / LUNGE 貼臉撲擊）決定移動節奏
+      let speedMult = 1.0;
+      let latMult = 1.0;
+      if (c.dist <= cfg.lungeDist) {
+        c.pose = 'LUNGE';
+        speedMult = cfg.lungeMult;
+        latMult = 0.4;
+      } else if ((c.pose || 'WAIT') === 'WAIT') {
+        if ((c.lookAwayCount || 0) >= 2 || c.unwatchedTime >= 0.75 || c.dist < 0.65) {
+          c.pose = 'COIL';
+          speedMult = cfg.coilMult * (c.coilBoost || 1);
+        } else {
+          speedMult = cfg.waitMult;
+          latMult = 1.45;
+        }
+      } else {
+        c.pose = 'COIL';
+        speedMult = cfg.coilMult * (c.coilBoost || 1);
+      }
+      c.coilBoost = Math.max(1, (c.coilBoost || 1) - dt * 0.6);
+
+      c.dist = Math.max(0, c.dist - st.approach * speedMult * dt);
       const toTarget = c.targetX - c.x;
-      const stepX = st.lateral * dt;
+      const stepX = st.lateral * latMult * dt;
       if (Math.abs(toTarget) <= stepX) {
         c.x = c.targetX;
         c.targetX = randomX(s.rng);
@@ -235,20 +345,25 @@
       if (c.glintTimer <= 0) {
         c.glintTimer = st.glint || cfg.glint;
         c.glintVisible = cfg.glintOn;
+        s.glintX = c.x;
         events.push('glint');
       }
     }
 
     const nearest = Math.min(...s.creatures.map((c) => c.dist));
+    const effectiveDist = Math.max(0, nearest - maxTension * 0.45);
     s.heartTimer -= dt;
     if (s.heartTimer <= 0) {
-      s.heartTimer = 0.3 + 0.7 * nearest;
+      s.heartTimer = 0.25 + 0.7 * effectiveDist;
       events.push('heartbeat');
     }
     if (anyMoving) {
       s.snapTimer -= dt;
       if (s.snapTimer <= 0) {
-        s.snapTimer = 2 + s.rng() * 2;
+        s.snapTimer = 1.6 + s.rng() * 1.8;
+        s.snapX = movingXs[Math.floor(s.rng() * movingXs.length)];
+        s.rustleX = s.snapX;
+        s.rustleTimer = 0.55;
         events.push('snap');
       }
     }
@@ -298,7 +413,7 @@
   const API = {
     SCREEN, HORIZON_Y, FEET_NEAR_Y, DEFAULTS,
     makeConfig, mulberry32, clamp,
-    creatureRect, eyePoint, isFrozen, gradePhoto, nightSettings,
+    creatureRect, eyePoint, gazeBox, isFrozen, gradePhoto, nightSettings,
     createGame, startNight, step, bestPhoto,
   };
 

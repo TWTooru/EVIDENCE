@@ -49,13 +49,12 @@
   <div class="arcade-header">★ EVIDENCE 1976 ★</div>
   <canvas id="c" width="640" height="640"></canvas>
   <div class="help">
-    [<span>方向鍵 / WASD</span>] 移動觀景窗　[<span>SPACE / J / 點擊</span>] 快門＋閃光<br>
-    URL 參數可調整數值，例如 <code>?approach=0.08&amp;vfSpeed=150&amp;debug=1</code>
+    [<span>方向鍵 / WASD</span>] 移動觀景窗（紅眼壓在刻度線下＝凍結；近距離<span>下拉納入全身</span>＝解除凍結瞬間快門）　[<span>SPACE / J / 點擊</span>] 快門＋閃光
   </div>
 
   <script>
     /* =====================================================================
-     * MODULE 1: Core Logic (EvidenceCore)
+     * MODULE 1: Core Logic (EvidenceCore) — 零加法深掘三支柱版
      * ===================================================================== */
     (function (root) {
       'use strict';
@@ -68,14 +67,14 @@
         vfW: 90,              // 觀景窗寬
         vfH: 110,             // 觀景窗高
         vfSpeed: 120,         // 觀景窗移動速度（px/s）
-        approach: 0.06,       // 沒被注視時每秒靠近的距離（dist 單位）
+        approach: 0.06,       // 沒被注視時每秒靠近的基準距離（dist 單位）
         lateral: 30,          // 沒被注視時的橫移速度（px/s）
         nightTime: 60,        // 每晚秒數
         film: 3,              // 每晚底片數
         charge: 2,            // 閃光充電秒數
         blind: 1,             // 閃光後致盲秒數
         glint: 1.5,           // 框外紅眼閃光間隔（秒）
-        glintOn: 0.15,        // 紅眼閃光持續秒數
+        glintOn: 0.35,        // 紅眼閃光持續秒數
         retreat: 0.95,        // 閃光後被逼退到的最遠距離上限
         retreatStep: 0.35,    // 每次閃光逼退的距離增量
         minH: 16,             // 最遠時的身高（px）
@@ -83,6 +82,12 @@
         evidenceFill: 0.85,
         evidenceComplete: 0.95,
         suspiciousScore: 40,
+        gazeTopRatio: 0.26,   // 觀景窗頂部 26% 為額頭緩衝區；紅眼須低於此線才可凍結
+        maxStare: 3.2,        // 連續死盯上限秒數（集滿觸發破框閃身 twitch）
+        waitMult: 0.55,       // WAIT 觀望態下的慢速試探倍率（誘敵深入）
+        coilMult: 1.65,       // COIL 蓄力態下的暴衝倍率
+        lungeMult: 1.45,      // LUNGE 貼臉態（最後拉框瞬間）的撲擊倍率
+        lungeDist: 0.35,      // 進入 LUNGE 貼臉獵殺態的距離門檻
         debug: 0,
       };
 
@@ -115,9 +120,9 @@
       function creatureRect(c, cfg) {
         const near = 1 - c.dist;
         const h = cfg.minH + (cfg.maxH - cfg.minH) * near;
-        const w = h * 0.3;
+        const w = h * 0.38;
         const feetY = HORIZON_Y + (FEET_NEAR_Y - HORIZON_Y) * near;
-        return { x: c.x - w / 2, y: feetY - h, w, h };
+        return { x: c.x - w / 2, y: feetY - h, w, h, pose: c.pose || 'WAIT', tension: c.tension || 0 };
       }
 
       function eyePoint(c, cfg) {
@@ -129,8 +134,14 @@
         return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
       }
 
+      function gazeBox(vf, cfg) {
+        const ratio = cfg && typeof cfg.gazeTopRatio === 'number' ? cfg.gazeTopRatio : DEFAULTS.gazeTopRatio;
+        const topPad = vf.h * ratio;
+        return { x: vf.x, y: vf.y + topPad, w: vf.w, h: vf.h - topPad };
+      }
+
       function isFrozen(c, vf, blindTimer, cfg) {
-        return blindTimer <= 0 && pointInRect(eyePoint(c, cfg), vf);
+        return blindTimer <= 0 && pointInRect(eyePoint(c, cfg), gazeBox(vf, cfg));
       }
 
       function overlapArea(a, b) {
@@ -167,7 +178,19 @@
       }
 
       function spawnCreature(rng, cfg, dist) {
-        return { x: randomX(rng), dist, targetX: randomX(rng), glintTimer: cfg.glint, glintVisible: 0, frozen: false };
+        return {
+          x: randomX(rng),
+          dist,
+          targetX: randomX(rng),
+          glintTimer: cfg.glint,
+          glintVisible: 0,
+          frozen: false,
+          pose: 'WAIT',
+          tension: 0,
+          coilBoost: 1,
+          unwatchedTime: 0,
+          lookAwayCount: 0,
+        };
       }
 
       function createGame(cfg, seed) {
@@ -190,6 +213,10 @@
           settings: null,
           heartTimer: 1,
           snapTimer: 3,
+          snapX: SCREEN / 2,
+          glintX: SCREEN / 2,
+          rustleTimer: 0,
+          rustleX: SCREEN / 2,
           endReason: null,
         };
       }
@@ -207,12 +234,14 @@
         s.flashTimer = 0;
         s.photos = [];
         s.lastPhotoTimer = 0;
+        s.rustleTimer = 0;
         s.endReason = null;
         s.creatures = [];
         for (let i = 0; i < s.settings.count; i++) s.creatures.push(spawnCreature(s.rng, cfg, 0.9));
         const eye = eyePoint(s.creatures[0], cfg);
         s.vf.x = clamp(eye.x - s.vf.w / 2, 0, SCREEN - s.vf.w);
         s.vf.y = clamp(eye.y - s.vf.h / 2, 0, SCREEN - s.vf.h);
+        s.creatures[0].frozen = isFrozen(s.creatures[0], s.vf, 0, cfg);
       }
 
       function endGame(s, reason, events) {
@@ -241,8 +270,13 @@
         const stepBack = (s.settings && s.settings.retreatStep) || cfg.retreatStep;
         for (const c of s.creatures) {
           c.dist = Math.min(cfg.retreat, c.dist + stepBack);
-          c.x = randomX(s.rng);
           c.targetX = randomX(s.rng);
+          c.glintTimer = Math.min(c.glintTimer, 0.35);
+          c.pose = 'WAIT';
+          c.tension = 0;
+          c.coilBoost = 1;
+          c.unwatchedTime = 0;
+          c.lookAwayCount = 0;
         }
         events.push('shot');
         if (photo.grade === 'EVIDENCE') {
@@ -270,17 +304,91 @@
         s.blindTimer = Math.max(0, s.blindTimer - dt);
         s.flashTimer = Math.max(0, s.flashTimer - dt);
         s.lastPhotoTimer = Math.max(0, s.lastPhotoTimer - dt);
+        s.rustleTimer = Math.max(0, (s.rustleTimer || 0) - dt);
         if (s.charge < 1) s.charge = Math.min(1, s.charge + dt / cfg.charge);
 
         let anyMoving = false;
+        let maxTension = 0;
+        const movingXs = [];
+
         for (const c of s.creatures) {
+          const wasFrozen = Boolean(c.frozen);
           c.frozen = isFrozen(c, s.vf, s.blindTimer, cfg);
           c.glintVisible = Math.max(0, c.glintVisible - dt);
-          if (c.frozen) continue;
+
+          if (c.frozen) {
+            if (!wasFrozen && (c.unwatchedTime || 0) > 0.15 && c.dist > cfg.lungeDist) {
+              c.pose = 'COIL';
+            }
+            if (c.dist <= cfg.lungeDist) {
+              c.pose = 'LUNGE';
+            }
+            c.unwatchedTime = 0;
+            c.tension = clamp((c.tension || 0) + dt / cfg.maxStare, 0, 1);
+            if (c.tension >= 0.5 && c.pose === 'WAIT') {
+              c.pose = 'COIL';
+            }
+            if (c.tension > maxTension) maxTension = c.tension;
+
+            // 支柱二：連續死盯超過極限（maxStare），怪物強制破框閃身並逼近一步
+            if (c.tension >= 1) {
+              c.tension = 0;
+              c.coilBoost = 1.35;
+              c.pose = c.dist <= cfg.lungeDist ? 'LUNGE' : 'COIL';
+              c.dist = Math.max(0.04, c.dist - 0.08);
+              const shiftDir = c.x > SCREEN / 2 ? -1 : 1;
+              c.x = clamp(c.x + shiftDir * (s.vf.w * 0.85), 40, SCREEN - 40);
+              c.targetX = randomX(s.rng);
+              c.frozen = false;
+              s.snapX = c.x;
+              s.rustleX = c.x;
+              s.rustleTimer = 0.65;
+              events.push('twitch');
+              events.push('snap');
+            }
+            continue;
+          }
+
+          if (wasFrozen) {
+            c.lookAwayCount = (c.lookAwayCount || 0) + 1;
+            c.unwatchedTime = 0;
+            if ((c.tension || 0) >= 0.35) {
+              c.coilBoost = 1 + c.tension * 1.25;
+              if (c.pose === 'WAIT') c.pose = 'COIL';
+            }
+            c.tension = 0;
+          } else {
+            c.tension = Math.max(0, (c.tension || 0) - dt * 0.5);
+          }
+
           anyMoving = true;
-          c.dist = Math.max(0, c.dist - st.approach * dt);
+          movingXs.push(c.x);
+          c.unwatchedTime = (c.unwatchedTime || 0) + dt;
+
+          // 支柱一：依三階段姿態（WAIT 觀望誘敵 / COIL 前傾暴衝 / LUNGE 貼臉撲擊）決定移動節奏
+          let speedMult = 1.0;
+          let latMult = 1.0;
+          if (c.dist <= cfg.lungeDist) {
+            c.pose = 'LUNGE';
+            speedMult = cfg.lungeMult;
+            latMult = 0.4;
+          } else if ((c.pose || 'WAIT') === 'WAIT') {
+            if ((c.lookAwayCount || 0) >= 2 || c.unwatchedTime >= 0.75 || c.dist < 0.65) {
+              c.pose = 'COIL';
+              speedMult = cfg.coilMult * (c.coilBoost || 1);
+            } else {
+              speedMult = cfg.waitMult;
+              latMult = 1.45;
+            }
+          } else {
+            c.pose = 'COIL';
+            speedMult = cfg.coilMult * (c.coilBoost || 1);
+          }
+          c.coilBoost = Math.max(1, (c.coilBoost || 1) - dt * 0.6);
+
+          c.dist = Math.max(0, c.dist - st.approach * speedMult * dt);
           const toTarget = c.targetX - c.x;
-          const stepX = st.lateral * dt;
+          const stepX = st.lateral * latMult * dt;
           if (Math.abs(toTarget) <= stepX) {
             c.x = c.targetX;
             c.targetX = randomX(s.rng);
@@ -291,20 +399,25 @@
           if (c.glintTimer <= 0) {
             c.glintTimer = st.glint || cfg.glint;
             c.glintVisible = cfg.glintOn;
+            s.glintX = c.x;
             events.push('glint');
           }
         }
 
         const nearest = Math.min(...s.creatures.map((c) => c.dist));
+        const effectiveDist = Math.max(0, nearest - maxTension * 0.45);
         s.heartTimer -= dt;
         if (s.heartTimer <= 0) {
-          s.heartTimer = 0.3 + 0.7 * nearest;
+          s.heartTimer = 0.25 + 0.7 * effectiveDist;
           events.push('heartbeat');
         }
         if (anyMoving) {
           s.snapTimer -= dt;
           if (s.snapTimer <= 0) {
-            s.snapTimer = 2 + s.rng() * 2;
+            s.snapTimer = 1.6 + s.rng() * 1.8;
+            s.snapX = movingXs[Math.floor(s.rng() * movingXs.length)];
+            s.rustleX = s.snapX;
+            s.rustleTimer = 0.55;
             events.push('snap');
           }
         }
@@ -354,7 +467,7 @@
       root.EvidenceCore = {
         SCREEN, HORIZON_Y, FEET_NEAR_Y, DEFAULTS,
         makeConfig, mulberry32, clamp,
-        creatureRect, eyePoint, isFrozen, gradePhoto, nightSettings,
+        creatureRect, eyePoint, gazeBox, isFrozen, gradePhoto, nightSettings,
         createGame, startNight, step, bestPhoto,
       };
     })(window);
@@ -367,6 +480,8 @@
 
       const C = root.EvidenceCore;
       const PAL = { black: '#000000', blue: '#24307a', white: '#f2f2f2', red: '#ff2a2a', yellow: '#ffb000' };
+      const VF_BG = '#080d22';
+      const VF_SCENE = '#1c2868';
       const S = C.SCREEN;
       const TREES = [
         { x: 34, baseY: 236, h: 170, w: 46, dist: 0.40 },
@@ -426,26 +541,257 @@
         for (const t of sortedTrees) drawPine(ctx, t, color);
       }
 
+      // 依三階段姿態（WAIT 觀望 / COIL 前傾蓄力 / LUNGE 雙爪撲擊）繪製畸形恐怖剪影
       function drawSilhouette(ctx, r, color, ox = 0, oy = 0, k = 1) {
-        const X = (v) => ox + v * k;
-        const Y = (v) => oy + v * k;
-        const headH = r.h * 0.22;
-        const torsoH = r.h * 0.45;
-        const legH = r.h - headH - torsoH;
+        const X = (u) => ox + (r.x + r.w * u) * k;
+        const Y = (v) => oy + (r.y + r.h * v) * k;
+        const pose = r.pose || 'WAIT';
         ctx.fillStyle = color;
-        ctx.fillRect(X(r.x + r.w * 0.2), Y(r.y), r.w * 0.6 * k, headH * k);
-        ctx.fillRect(X(r.x), Y(r.y + headH), r.w * k, torsoH * k);
-        ctx.fillRect(X(r.x + r.w * 0.05), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
-        ctx.fillRect(X(r.x + r.w * 0.65), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+        ctx.strokeStyle = color;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+
+        // 1. 歪斜長顱與下顎（LUNGE 時張裂大嘴，COIL 時壓低前傾）
+        const headDrop = pose === 'COIL' ? 0.04 : 0;
+        ctx.beginPath();
+        ctx.moveTo(X(0.42), Y(0.05 + headDrop));
+        ctx.lineTo(X(0.66), Y(0.00 + headDrop));
+        ctx.lineTo(X(0.76), Y(0.08 + headDrop));
+        ctx.lineTo(X(0.68), Y(0.21 + headDrop));
+        ctx.lineTo(X(0.54), Y((pose === 'LUNGE' ? 0.28 : 0.24) + headDrop));
+        ctx.lineTo(X(0.38), Y(0.16 + headDrop));
+        ctx.closePath();
+        ctx.fill();
+
+        // 2. 歪斜細頸＋高聳駝背＋乾癟收縮的胸腔與腰部
+        ctx.beginPath();
+        ctx.moveTo(X(0.46), Y(0.18 + headDrop));
+        ctx.lineTo(X(pose === 'COIL' ? 0.12 : 0.20), Y(0.21));
+        ctx.lineTo(X(pose === 'COIL' ? 0.08 : 0.14), Y(0.32));
+        ctx.lineTo(X(0.32), Y(0.48));
+        ctx.lineTo(X(0.27), Y(0.63));
+        ctx.lineTo(X(0.63), Y(0.61));
+        ctx.lineTo(X(0.56), Y(0.46));
+        ctx.lineTo(X(pose === 'COIL' ? 0.88 : 0.80), Y(0.30));
+        ctx.lineTo(X(0.58), Y(0.21));
+        ctx.closePath();
+        ctx.fill();
+
+        // 背脊突起骨刺（COIL 與 LUNGE 時更加暴起）
+        const spikeExt = pose === 'WAIT' ? 0 : -0.06;
+        ctx.beginPath();
+        ctx.moveTo(X(0.22), Y(0.21));
+        ctx.lineTo(X(0.11 + spikeExt), Y(0.14 + spikeExt));
+        ctx.lineTo(X(0.29), Y(0.20));
+        ctx.moveTo(X(0.18), Y(0.27));
+        ctx.lineTo(X(0.07 + spikeExt), Y(0.24));
+        ctx.lineTo(X(0.22), Y(0.32));
+        ctx.fill();
+
+        const limbW = Math.max(1.2, r.w * 0.085 * k);
+        const clawW = Math.max(0.8, r.w * 0.035 * k);
+
+        if (pose === 'LUNGE') {
+          // 撲擊態：雙臂高舉向兩側張開撲向鏡頭！
+          ctx.lineWidth = limbW * 1.1;
+          ctx.beginPath();
+          ctx.moveTo(X(0.18), Y(0.25));
+          ctx.lineTo(X(-0.14), Y(0.12));
+          ctx.lineTo(X(-0.08), Y(-0.04));
+          ctx.stroke();
+
+          ctx.lineWidth = clawW * 1.2;
+          ctx.beginPath();
+          ctx.moveTo(X(-0.08), Y(-0.04)); ctx.lineTo(X(-0.22), Y(-0.12));
+          ctx.moveTo(X(-0.08), Y(-0.04)); ctx.lineTo(X(-0.08), Y(-0.16));
+          ctx.moveTo(X(-0.08), Y(-0.04)); ctx.lineTo(X(0.04), Y(-0.12));
+          ctx.stroke();
+
+          ctx.lineWidth = limbW * 1.05;
+          ctx.beginPath();
+          ctx.moveTo(X(0.77), Y(0.28));
+          ctx.lineTo(X(1.12), Y(0.14));
+          ctx.lineTo(X(1.06), Y(-0.02));
+          ctx.stroke();
+
+          ctx.lineWidth = clawW * 1.2;
+          ctx.beginPath();
+          ctx.moveTo(X(1.06), Y(-0.02)); ctx.lineTo(X(0.94), Y(-0.11));
+          ctx.moveTo(X(1.06), Y(-0.02)); ctx.lineTo(X(1.08), Y(-0.15));
+          ctx.moveTo(X(1.06), Y(-0.02)); ctx.lineTo(X(1.20), Y(-0.09));
+          ctx.stroke();
+        } else if (pose === 'COIL') {
+          // 蓄力態：手肘大幅向外拱起如螳螂蓄勢，準備暴衝
+          ctx.lineWidth = limbW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.16), Y(0.25));
+          ctx.lineTo(X(-0.16), Y(0.38));
+          ctx.lineTo(X(0.02), Y(0.64));
+          ctx.stroke();
+
+          ctx.lineWidth = clawW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.02), Y(0.64)); ctx.lineTo(X(-0.10), Y(0.74));
+          ctx.moveTo(X(0.02), Y(0.64)); ctx.lineTo(X(0.02), Y(0.77));
+          ctx.moveTo(X(0.02), Y(0.64)); ctx.lineTo(X(0.12), Y(0.73));
+          ctx.stroke();
+
+          ctx.lineWidth = limbW * 0.95;
+          ctx.beginPath();
+          ctx.moveTo(X(0.78), Y(0.29));
+          ctx.lineTo(X(1.14), Y(0.40));
+          ctx.lineTo(X(0.96), Y(0.64));
+          ctx.stroke();
+
+          ctx.lineWidth = clawW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.96), Y(0.64)); ctx.lineTo(X(0.86), Y(0.73));
+          ctx.moveTo(X(0.96), Y(0.64)); ctx.lineTo(X(0.98), Y(0.76));
+          ctx.moveTo(X(0.96), Y(0.64)); ctx.lineTo(X(1.10), Y(0.72));
+          ctx.stroke();
+        } else {
+          // 觀望態（WAIT）：過膝垂地的不對稱長臂與細長鬼爪
+          ctx.lineWidth = limbW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.18), Y(0.25));
+          ctx.lineTo(X(0.04), Y(0.52));
+          ctx.lineTo(X(0.12), Y(0.79));
+          ctx.stroke();
+          ctx.lineWidth = clawW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.12), Y(0.78)); ctx.lineTo(X(0.02), Y(0.88));
+          ctx.moveTo(X(0.12), Y(0.78)); ctx.lineTo(X(0.11), Y(0.90));
+          ctx.moveTo(X(0.12), Y(0.78)); ctx.lineTo(X(0.20), Y(0.86));
+          ctx.stroke();
+
+          ctx.lineWidth = limbW * 0.92;
+          ctx.beginPath();
+          ctx.moveTo(X(0.77), Y(0.29));
+          ctx.lineTo(X(0.94), Y(0.53));
+          ctx.lineTo(X(0.84), Y(0.75));
+          ctx.stroke();
+          ctx.lineWidth = clawW;
+          ctx.beginPath();
+          ctx.moveTo(X(0.84), Y(0.74)); ctx.lineTo(X(0.76), Y(0.84));
+          ctx.moveTo(X(0.84), Y(0.74)); ctx.lineTo(X(0.86), Y(0.87));
+          ctx.moveTo(X(0.84), Y(0.74)); ctx.lineTo(X(0.96), Y(0.83));
+          ctx.stroke();
+        }
+
+        // 4. 內八彎折的畸形雙腿
+        const legW = Math.max(1.4, r.w * 0.12 * k);
+        ctx.lineWidth = legW;
+        ctx.beginPath();
+        ctx.moveTo(X(0.34), Y(0.60));
+        ctx.lineTo(X(pose === 'COIL' ? 0.24 : 0.41), Y(0.79));
+        ctx.lineTo(X(0.26), Y(0.99));
+        ctx.moveTo(X(0.57), Y(0.59));
+        ctx.lineTo(X(pose === 'COIL' ? 0.72 : 0.52), Y(0.78));
+        ctx.lineTo(X(0.68), Y(1.00));
+        ctx.stroke();
       }
 
       function drawEyes(ctx, r, color, ox = 0, oy = 0, k = 1) {
-        const cx = r.x + r.w / 2;
-        const ey = r.y + r.h * 0.12;
-        const size = Math.max(1, r.w * 0.12) * k;
+        const X = (u) => ox + (r.x + r.w * u) * k;
+        const Y = (v) => oy + (r.y + r.h * v) * k;
+        const sL = Math.max(1.2, r.w * 0.075 * k);
+        const sR = Math.max(1.5, r.w * 0.105 * k);
         ctx.fillStyle = color;
-        ctx.fillRect(ox + (cx - r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
-        ctx.fillRect(ox + (cx + r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
+
+        ctx.beginPath();
+        const lx = X(0.47), ly = Y(0.125);
+        ctx.moveTo(lx, ly - sL * 1.2);
+        ctx.lineTo(lx + sL * 0.8, ly);
+        ctx.lineTo(lx, ly + sL * 1.2);
+        ctx.lineTo(lx - sL * 0.8, ly);
+        const rx = X(0.64), ry = Y(0.095);
+        ctx.moveTo(rx, ry - sR * 1.35);
+        ctx.lineTo(rx + sR * 0.85, ry);
+        ctx.lineTo(rx, ry + sR * 1.35);
+        ctx.lineTo(rx - sR * 0.85, ry);
+        ctx.fill();
+      }
+
+      // 觀景窗內的鬼：隨凝視躁動（tension）加劇而劇烈顫抖並閃現紅眼
+      function drawGhost(ctx, r, near, tension) {
+        const t = performance.now() * 0.001;
+        const tens = tension || 0;
+        const flicker = Math.sin(t * 17) * Math.cos(t * 29 + r.x);
+        if (flicker < -0.35 && tens < 0.35) return;
+
+        ctx.save();
+        const baseAlpha = (0.20 + 0.42 * near + 0.25 * tens) * (0.55 + 0.45 * Math.abs(flicker));
+        const slices = 7;
+        const sh = r.h / slices;
+        const tensionJitter = tens > 0.15 ? Math.sin(t * 60) * tens * 4.0 : 0;
+        for (let i = 0; i < slices; i++) {
+          const hHash = Math.sin(t * 23 + i * 4.1 + r.x);
+          if (hHash < -0.2 && tens < 0.5) continue;
+          const jitterX = Math.round((hHash > 0.65 ? Math.sin(t * 47 + i) * 2.5 : 0) + (i % 2 === 0 ? tensionJitter : -tensionJitter));
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(r.x - r.w * 0.35, r.y - r.h * 0.18 + i * sh * 1.2, r.w * 1.7, Math.ceil(sh * 1.25));
+          ctx.clip();
+          ctx.globalAlpha = Math.min(1, baseAlpha * 0.45);
+          drawSilhouette(ctx, r, '#28388a', jitterX + 1, 0, 1);
+          ctx.globalAlpha = Math.min(1, baseAlpha);
+          drawSilhouette(ctx, r, '#02030a', jitterX, 0, 1);
+          ctx.restore();
+        }
+        // 當凝視躁動升高或距離極近時，紅眼在觀景窗內灼熱閃爍
+        if ((near > 0.45 && flicker > 0.65) || tens > 0.25 || r.pose === 'LUNGE') {
+          ctx.globalAlpha = Math.min(0.95, 0.35 + tens * 0.6);
+          const eyeJitter = Math.round(tensionJitter * 0.7);
+          drawEyes(ctx, r, PAL.red, eyeJitter, 0, 1);
+        }
+        ctx.restore();
+      }
+
+      function drawGrain(ctx, vf) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(vf.x + 2, vf.y + 2, vf.w - 4, vf.h - 4);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        for (let y = Math.floor(vf.y); y < vf.y + vf.h; y += 2) {
+          ctx.fillRect(vf.x, y, vf.w, 1);
+        }
+        const seed = Math.floor(performance.now() * 0.04);
+        for (let i = 0; i < 28; i++) {
+          const n = Math.sin(seed * 12.9898 + i * 78.233) * 43758.5453;
+          const frac = n - Math.floor(n);
+          const n2 = Math.sin(seed * 39.346 + i * 11.135) * 23421.631;
+          const frac2 = n2 - Math.floor(n2);
+          const gx = vf.x + Math.floor(frac * (vf.w - 2));
+          const gy = vf.y + Math.floor(frac2 * (vf.h - 2));
+          ctx.fillStyle = i % 3 === 0 ? 'rgba(120, 145, 255, 0.14)' : 'rgba(0, 0, 0, 0.45)';
+          ctx.fillRect(gx, gy, 1 + (i % 2), 1);
+        }
+        ctx.restore();
+      }
+
+      function drawSoundCue(ctx, s) {
+        if (!s.rustleTimer || s.rustleTimer <= 0) return;
+        const alpha = Math.min(1, s.rustleTimer / 0.55);
+        const rx = s.rustleX;
+        const vf = s.vf;
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.65;
+        ctx.strokeStyle = PAL.blue;
+        ctx.lineWidth = 1;
+        const r = (1 - alpha) * 10 + 3;
+        ctx.strokeRect(Math.round(rx - r), C.HORIZON_Y + 26 - Math.round(r * 0.4), Math.round(r * 2), Math.round(r * 0.8));
+
+        if (rx < vf.x || rx > vf.x + vf.w) {
+          const onLeft = rx < vf.x;
+          const ix = onLeft ? Math.max(4, vf.x - 7) : Math.min(S - 5, vf.x + vf.w + 5);
+          const iy = Math.round(vf.y + vf.h / 2);
+          ctx.fillStyle = PAL.yellow;
+          ctx.globalAlpha = alpha * 0.8;
+          ctx.fillRect(ix, iy - 4, 2, 9);
+          ctx.fillRect(ix + (onLeft ? -3 : 3), iy - 7, 1, 15);
+        }
+        ctx.restore();
       }
 
       function drawPhoto(ctx, photo, x, y, k) {
@@ -494,29 +840,42 @@
 
       function drawDebug(ctx, s) {
         s.creatures.forEach((c, i) => {
-          text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
+          text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + ' ' + (c.pose || 'WAIT') + ' T:' + (c.tension || 0).toFixed(1) + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
         });
       }
 
+      // 移除微波爐讀秒百分比（TOO FAR XX%），改為三支柱心理狀態提示
       function bestAimHint(s) {
         const cfg = s.cfg;
         const vf = s.vf;
         let best = null;
+        let bestCreature = null;
         for (const c of s.creatures) {
           const r = C.creatureRect(c, cfg);
           const g = C.gradePhoto(vf, r, cfg);
           if (g.completeness <= 0 && !c.frozen) continue;
-          if (!best || g.score > best.score) best = g;
+          if (!best || g.score > best.score) {
+            best = g;
+            bestCreature = c;
+          }
         }
-        if (!best) return null;
+        if (!best || !bestCreature) return null;
         if (best.grade === 'EVIDENCE') {
-          return { label: 'EVIDENCE READY!', color: PAL.red, ready: true };
+          return { label: 'SHOOT NOW!', color: PAL.red, ready: true };
         }
-        if (best.fill < cfg.evidenceFill) {
-          const pct = Math.min(99, Math.round((best.fill / cfg.evidenceFill) * 100));
-          return { label: 'TOO FAR (' + pct + '%)', color: PAL.blue, ready: false };
+        if (best.fill >= cfg.evidenceFill && bestCreature.frozen) {
+          return { label: 'PULL DOWN: FULL BODY', color: PAL.red, ready: false };
         }
-        return { label: 'FIT FULL BODY', color: PAL.red, ready: false };
+        if (bestCreature.frozen && (bestCreature.tension || 0) >= 0.65) {
+          return { label: 'IT IS TREMBLING...', color: PAL.red, ready: false };
+        }
+        if (bestCreature.frozen && bestCreature.pose === 'COIL') {
+          return { label: 'COILED — CAREFUL', color: PAL.red, ready: false };
+        }
+        if (bestCreature.frozen) {
+          return { label: 'FROZEN — LOOK AWAY', color: PAL.blue, ready: false };
+        }
+        return { label: 'LOCK ITS EYES!', color: PAL.red, ready: false };
       }
 
       function drawPlay(ctx, s) {
@@ -525,33 +884,56 @@
         ctx.fillStyle = PAL.black;
         ctx.fillRect(0, 0, S, S);
         drawScenery(ctx, PAL.blue);
+        drawSoundCue(ctx, s);
         for (const c of s.creatures) {
-          if (c.glintVisible > 0) drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1);
+          if (c.glintVisible <= 0) continue;
+          ctx.globalAlpha = Math.min(1, c.glintVisible / (cfg.glintOn * 0.5));
+          drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1);
+          ctx.globalAlpha = 1;
         }
 
         const lit = s.blindTimer <= 0;
         const hint = lit ? bestAimHint(s) : null;
+        const lastShot = s.photos[s.photos.length - 1];
+        const flashing = s.flashTimer > 0 && lastShot;
+
+        if (flashing) {
+          ctx.fillStyle = PAL.white;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(0, 0, S, S);
+          ctx.globalAlpha = 1;
+        }
+
         ctx.save();
         ctx.beginPath();
         ctx.rect(vf.x, vf.y, vf.w, vf.h);
         ctx.clip();
-        if (lit) {
+        if (flashing) {
           ctx.fillStyle = PAL.white;
           ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
           drawHorizon(ctx, PAL.blue);
+          for (const t of TREES) drawPine(ctx, t, PAL.blue);
+          const sorted = lastShot.rects.slice().sort((a, b) => a.h - b.h);
+          for (const r of sorted) {
+            drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
+            drawEyes(ctx, r, PAL.red, 0, 0, 1);
+          }
+        } else if (lit) {
+          ctx.fillStyle = VF_BG;
+          ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
+          drawHorizon(ctx, VF_SCENE);
           const items = [];
           for (const t of TREES) items.push({ kind: 'tree', dist: t.dist, t });
           for (const c of s.creatures) items.push({ kind: 'creature', dist: c.dist, c });
           items.sort((a, b) => b.dist - a.dist);
           for (const it of items) {
             if (it.kind === 'tree') {
-              drawPine(ctx, it.t, PAL.blue);
+              drawPine(ctx, it.t, VF_SCENE);
             } else {
-              const r = C.creatureRect(it.c, cfg);
-              drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
-              drawEyes(ctx, r, PAL.red, 0, 0, 1);
+              drawGhost(ctx, C.creatureRect(it.c, cfg), 1 - it.c.dist, it.c.tension || 0);
             }
           }
+          drawGrain(ctx, vf);
         } else {
           ctx.fillStyle = PAL.black;
           ctx.fillRect(vf.x, vf.y, vf.w, vf.h);
@@ -563,6 +945,15 @@
         if (!lit) ctx.setLineDash([4, 4]);
         ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
         ctx.setLineDash([]);
+
+        // 凝視壓制線刻度（Gaze Lock Line）：紅眼壓在此線以下才凍結；下拉構圖全身時紅眼越過此線即解除凍結
+        const gBox = C.gazeBox(vf, cfg);
+        const gy = Math.round(gBox.y);
+        const anyFrozen = s.creatures.some((c) => c.frozen);
+        ctx.fillStyle = anyFrozen ? PAL.red : PAL.yellow;
+        ctx.fillRect(vf.x + 2, gy, 7, 1);
+        ctx.fillRect(vf.x + vf.w - 9, gy, 7, 1);
+
         ctx.fillStyle = PAL.yellow;
         ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
         ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
@@ -574,10 +965,6 @@
           text(ctx, hint.label, vf.x + vf.w / 2, bannerY + 1, hint.color === PAL.blue ? PAL.white : PAL.red, 8, 'center');
         }
 
-        if (s.flashTimer > 0) {
-          ctx.fillStyle = PAL.white;
-          ctx.fillRect(0, 0, S, S);
-        }
         drawHud(ctx, s);
         if (cfg.debug) drawDebug(ctx, s);
       }
@@ -617,9 +1004,30 @@
         ctx.fillStyle = PAL.black;
         ctx.fillRect(0, 0, S, S);
         if (s.endReason === 'caught' && s.phaseTime < 1.2) {
-          ctx.fillStyle = PAL.red;
-          ctx.fillRect(60, 120, 70, 34);
-          ctx.fillRect(190, 120, 70, 34);
+          const jx = (Math.random() - 0.5) * 14;
+          const jy = (Math.random() - 0.5) * 10;
+          ctx.fillStyle = '#0c1029';
+          ctx.beginPath();
+          ctx.moveTo(95 + jx, 20 + jy);
+          ctx.lineTo(235 + jx, 8 + jy);
+          ctx.lineTo(260 + jx, 115 + jy);
+          ctx.lineTo(205 + jx, 285 + jy);
+          ctx.lineTo(125 + jx, 295 + jy);
+          ctx.lineTo(68 + jx, 140 + jy);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = PAL.black;
+          ctx.beginPath();
+          ctx.moveTo(148 + jx, 175 + jy);
+          ctx.lineTo(192 + jx, 165 + jy);
+          ctx.lineTo(182 + jx, 268 + jy);
+          ctx.lineTo(138 + jx, 260 + jy);
+          ctx.closePath();
+          ctx.fill();
+
+          const bigR = { x: 20 + jx, y: 18 + jy, w: 280, h: 920 };
+          drawEyes(ctx, bigR, PAL.red, 0, 0, 1);
           return;
         }
         text(ctx, 'GAME OVER', S / 2, 24, PAL.red, 20, 'center');
@@ -649,8 +1057,82 @@
     (function (root) {
       'use strict';
 
+      const SCREEN = (root.EvidenceCore && root.EvidenceCore.SCREEN) || 320;
       let ac = null;
       let master = null;
+      let droneOsc1 = null;
+      let droneOsc2 = null;
+      let droneFilter = null;
+      let droneGain = null;
+      let windGain = null;
+      let stareGain = null;
+
+      function panNode(pan) {
+        if (!ac.createStereoPanner || !pan) return master;
+        const p = ac.createStereoPanner();
+        p.pan.value = Math.max(-0.9, Math.min(0.9, pan));
+        p.connect(master);
+        return p;
+      }
+
+      function panFromX(x) {
+        if (typeof x !== 'number') return 0;
+        return ((x / SCREEN) * 2 - 1) * 0.85;
+      }
+
+      function initAmbience() {
+        droneFilter = ac.createBiquadFilter();
+        droneFilter.type = 'lowpass';
+        droneFilter.frequency.value = 95;
+        droneGain = ac.createGain();
+        droneGain.gain.value = 0.04;
+
+        droneOsc1 = ac.createOscillator();
+        droneOsc2 = ac.createOscillator();
+        droneOsc1.type = 'sawtooth';
+        droneOsc2.type = 'triangle';
+        droneOsc1.frequency.value = 46;
+        droneOsc2.frequency.value = 68.5;
+        droneOsc1.connect(droneFilter);
+        droneOsc2.connect(droneFilter);
+        droneFilter.connect(droneGain);
+        droneGain.connect(master);
+        droneOsc1.start();
+        droneOsc2.start();
+
+        const windLen = ac.sampleRate * 3;
+        const windBuf = ac.createBuffer(1, windLen, ac.sampleRate);
+        const wd = windBuf.getChannelData(0);
+        for (let i = 0; i < windLen; i++) wd[i] = Math.random() * 2 - 1;
+
+        const windSrc = ac.createBufferSource();
+        windSrc.buffer = windBuf;
+        windSrc.loop = true;
+        const windFilter = ac.createBiquadFilter();
+        windFilter.type = 'bandpass';
+        windFilter.frequency.value = 260;
+        windFilter.Q.value = 2.2;
+        windGain = ac.createGain();
+        windGain.gain.value = 0.04;
+        windSrc.connect(windFilter);
+        windFilter.connect(windGain);
+        windGain.connect(master);
+        windSrc.start();
+
+        const stareSrc = ac.createBufferSource();
+        stareSrc.buffer = windBuf;
+        stareSrc.loop = true;
+        const stareFilter = ac.createBiquadFilter();
+        stareFilter.type = 'bandpass';
+        stareFilter.frequency.value = 2400;
+        stareFilter.Q.value = 4.5;
+        stareGain = ac.createGain();
+        stareGain.gain.value = 0.0001;
+        stareSrc.connect(stareFilter);
+        stareFilter.connect(stareGain);
+        stareGain.connect(master);
+        stareSrc.start();
+      }
 
       function init() {
         if (ac) {
@@ -661,11 +1143,12 @@
         if (!AC) return;
         ac = new AC();
         master = ac.createGain();
-        master.gain.value = 0.4;
+        master.gain.value = 0.45;
         master.connect(ac.destination);
+        initAmbience();
       }
 
-      function tone(type, f0, f1, dur, vol, delay) {
+      function tone(type, f0, f1, dur, vol, delay, pan) {
         const t = ac.currentTime + (delay || 0);
         const osc = ac.createOscillator();
         const gain = ac.createGain();
@@ -675,12 +1158,12 @@
         gain.gain.setValueAtTime(vol, t);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
         osc.connect(gain);
-        gain.connect(master);
+        gain.connect(panNode(pan));
         osc.start(t);
         osc.stop(t + dur + 0.02);
       }
 
-      function noise(dur, vol, highpass, delay) {
+      function noise(dur, vol, highpass, delay, pan) {
         const t = ac.currentTime + (delay || 0);
         const len = Math.max(1, Math.floor(ac.sampleRate * dur));
         const buf = ac.createBuffer(1, len, ac.sampleRate);
@@ -696,43 +1179,85 @@
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
         src.connect(filter);
         filter.connect(gain);
-        gain.connect(master);
+        gain.connect(panNode(pan));
         src.start(t);
       }
 
-      function heartbeat() {
-        tone('sine', 70, 45, 0.12, 0.8);
-        tone('sine', 70, 45, 0.1, 0.5, 0.18);
+      function heartbeat(near) {
+        const v = 0.5 + 0.45 * near;
+        const f = 64 + 14 * near;
+        tone('sine', f, 38, 0.13, v);
+        tone('sine', f * 0.92, 35, 0.11, v * 0.65, 0.17);
       }
-      function snap() {
-        noise(0.06, 0.5, 2000);
+      function snap(pan) {
+        tone('triangle', 130, 42, 0.08, 0.28, 0, pan);
+        noise(0.06, 0.55, 1900, 0, pan);
+        noise(0.16, 0.2, 900, 0.03, pan);
+      }
+      function twitchSound(pan) {
+        tone('sawtooth', 780, 120, 0.16, 0.26, 0, pan);
+        noise(0.12, 0.45, 1400, 0, pan);
+      }
+      function glintSound(pan) {
+        tone('sine', 1650, 1220, 0.22, 0.055, 0, pan);
       }
       function charge(seconds) {
-        tone('sawtooth', 300, 1500, seconds, 0.05, 0.1);
+        tone('sawtooth', 320, 1650, seconds, 0.055, 0.1);
       }
       function shutter() {
-        tone('square', 1200, 300, 0.05, 0.3);
-        noise(0.08, 0.4, 800);
+        tone('square', 1200, 260, 0.05, 0.32);
+        noise(0.09, 0.45, 750);
       }
       function scream(seconds, vol) {
-        tone('sawtooth', 900, 80, seconds, vol);
-        noise(seconds * 0.8, vol * 0.6, 500);
+        tone('sawtooth', 920, 75, seconds, vol);
+        tone('square', 410, 58, seconds * 0.9, vol * 0.5);
+        noise(seconds * 0.85, vol * 0.65, 450);
       }
 
-      function play(event, cfg) {
+      function update(s) {
+        if (!ac || !droneGain || !s) return;
+        const now = ac.currentTime;
+        if (s.phase !== 'play' || !s.creatures || !s.creatures.length) {
+          droneGain.gain.setTargetAtTime(0.04, now, 0.2);
+          droneFilter.frequency.setTargetAtTime(85, now, 0.2);
+          windGain.gain.setTargetAtTime(0.035, now, 0.2);
+          stareGain.gain.setTargetAtTime(0.0001, now, 0.1);
+          return;
+        }
+        const nearest = Math.min(...s.creatures.map((c) => c.dist));
+        const maxTension = Math.max(...s.creatures.map((c) => c.tension || 0));
+        const near = Math.max(0, Math.min(1, 1 - nearest));
+        const anyFrozen = s.creatures.some((c) => c.frozen);
+
+        droneGain.gain.setTargetAtTime(0.05 + near * 0.18 + maxTension * 0.08, now, 0.15);
+        droneFilter.frequency.setTargetAtTime(85 + near * 240 + maxTension * 180, now, 0.15);
+        droneOsc1.frequency.setTargetAtTime(46 + near * 9 + maxTension * 6, now, 0.15);
+        droneOsc2.frequency.setTargetAtTime(68.5 - near * 6 - maxTension * 5, now, 0.15);
+        windGain.gain.setTargetAtTime(0.045 + near * 0.05, now, 0.2);
+        stareGain.gain.setTargetAtTime(anyFrozen ? 0.035 + near * 0.045 + maxTension * 0.07 : 0.0001, now, 0.08);
+      }
+
+      function play(event, cfg, s) {
         if (!ac) return;
+        const nearest = s && s.creatures && s.creatures.length
+          ? Math.min(...s.creatures.map((c) => c.dist))
+          : 0.8;
+        const near = Math.max(0, Math.min(1, 1 - nearest));
         switch (event) {
-          case 'heartbeat': heartbeat(); break;
-          case 'snap': snap(); break;
+          case 'start': tone('triangle', 180, 90, 0.18, 0.25); break;
+          case 'heartbeat': heartbeat(near); break;
+          case 'snap': snap(panFromX(s && s.snapX)); break;
+          case 'twitch': twitchSound(panFromX(s && s.snapX)); break;
+          case 'glint': glintSound(panFromX(s && s.glintX)); break;
           case 'shot': shutter(); charge((cfg && cfg.charge) || 2); break;
           case 'win': charge(0.4); break;
-          case 'caught': scream(1.2, 0.5); break;
-          case 'lose': scream(0.6, 0.25); break;
+          case 'caught': scream(1.2, 0.55); break;
+          case 'lose': scream(0.6, 0.28); break;
           default: break;
         }
       }
 
-      root.EvidenceAudio = { init, play };
+      root.EvidenceAudio = { init, play, update };
     })(window);
 
     /* =====================================================================
@@ -785,7 +1310,8 @@
         last = now;
         const input = { dx: axis(LEFT, RIGHT), dy: axis(UP, DOWN), fire: firePending };
         firePending = false;
-        for (const ev of C.step(state, input, dt)) EvidenceAudio.play(ev, cfg);
+        for (const ev of C.step(state, input, dt)) EvidenceAudio.play(ev, cfg, state);
+        EvidenceAudio.update(state);
         EvidenceRender.draw(ctx, state);
         requestAnimationFrame(frame);
       }

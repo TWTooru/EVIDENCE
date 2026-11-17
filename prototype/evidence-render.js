@@ -1,4 +1,4 @@
-/* EVIDENCE 1976 — canvas renderer. Strict 4-color palette, logical 320x320. */
+/* EVIDENCE 1976 — canvas renderer. Strict 5-color palette, logical 320x320. */
 (function (root) {
   'use strict';
 
@@ -27,11 +27,9 @@
     const topY = t.baseY - t.h;
     const trunkW = Math.max(4, Math.round(t.w * 0.16));
     const trunkTop = topY + Math.round(t.h * 0.22);
-    // 樹幹與樹根張開底座
     ctx.fillRect(Math.round(t.x - trunkW / 2), trunkTop, trunkW, t.baseY - trunkTop);
     ctx.fillRect(Math.round(t.x - trunkW), t.baseY - 3, trunkW * 2, 3);
 
-    // 5 層階梯狀針葉樹冠（由上而下漸寬）
     const canopyH = Math.round(t.h * 0.76);
     const tiers = 5;
     const tierStep = canopyH / tiers;
@@ -65,31 +63,52 @@
     for (const t of sortedTrees) drawPine(ctx, t, color);
   }
 
-  // r: 身體外框 {x,y,w,h}；ox, oy, k: 平移與縮放（給照片縮圖用）
-  function drawSilhouette(ctx, r, color, ox = 0, oy = 0, k = 1) {
-    const X = (v) => ox + v * k;
+  // 依三階段姿態（WAIT 觀望 / COIL 前傾蓄力 / LUNGE 雙爪撲擊）繪製剪影
+  function drawSilhouette(ctx, r, color, ox = 0, oy = 0, k = 1, jitterX = 0) {
+    const X = (v) => ox + (v + jitterX) * k;
     const Y = (v) => oy + v * k;
+    const pose = r.pose || 'WAIT';
     const headH = r.h * 0.22;
-    const torsoH = r.h * 0.45;
+    const torsoH = r.h * 0.43;
     const legH = r.h - headH - torsoH;
     ctx.fillStyle = color;
-    ctx.fillRect(X(r.x + r.w * 0.2), Y(r.y), r.w * 0.6 * k, headH * k);
-    ctx.fillRect(X(r.x), Y(r.y + headH), r.w * k, torsoH * k);
-    ctx.fillRect(X(r.x + r.w * 0.05), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
-    ctx.fillRect(X(r.x + r.w * 0.65), Y(r.y + headH + torsoH), r.w * 0.3 * k, legH * k);
+
+    if (pose === 'LUNGE') {
+      // 撲擊態：雙臂高舉張爪撲向鏡頭、長顱裂嘴
+      ctx.fillRect(X(r.x + r.w * 0.22), Y(r.y), r.w * 0.56 * k, headH * 1.05 * k);
+      ctx.fillRect(X(r.x + r.w * 0.12), Y(r.y + headH * 0.9), r.w * 0.76 * k, torsoH * k);
+      // 高舉張開的雙臂與利爪
+      ctx.fillRect(X(r.x - r.w * 0.24), Y(r.y + r.h * 0.04), r.w * 0.22 * k, r.h * 0.42 * k);
+      ctx.fillRect(X(r.x + r.w * 1.02), Y(r.y + r.h * 0.02), r.w * 0.22 * k, r.h * 0.42 * k);
+      ctx.fillRect(X(r.x - r.w * 0.30), Y(r.y - r.h * 0.04), r.w * 0.12 * k, r.h * 0.14 * k);
+      ctx.fillRect(X(r.x + r.w * 1.18), Y(r.y - r.h * 0.04), r.w * 0.12 * k, r.h * 0.14 * k);
+    } else if (pose === 'COIL') {
+      // 蓄力態：壓低前傾、背部拱起、雙肘外張如螳螂蓄勢
+      ctx.fillRect(X(r.x + r.w * 0.28), Y(r.y + r.h * 0.05), r.w * 0.52 * k, headH * k);
+      ctx.fillRect(X(r.x + r.w * 0.08), Y(r.y + headH * 0.85), r.w * 0.84 * k, torsoH * k);
+      // 外張雙臂
+      ctx.fillRect(X(r.x - r.w * 0.18), Y(r.y + headH), r.w * 0.20 * k, r.h * 0.46 * k);
+      ctx.fillRect(X(r.x + r.w * 0.98), Y(r.y + headH), r.w * 0.20 * k, r.h * 0.46 * k);
+    } else {
+      // 觀望態：高瘦歪頭、長臂垂膝
+      ctx.fillRect(X(r.x + r.w * 0.28), Y(r.y), r.w * 0.52 * k, headH * k);
+      ctx.fillRect(X(r.x + r.w * 0.15), Y(r.y + headH), r.w * 0.70 * k, torsoH * k);
+      ctx.fillRect(X(r.x), Y(r.y + headH * 1.1), r.w * 0.14 * k, r.h * 0.52 * k);
+      ctx.fillRect(X(r.x + r.w * 0.86), Y(r.y + headH * 1.1), r.w * 0.14 * k, r.h * 0.52 * k);
+    }
+
+    // 雙腿
+    ctx.fillRect(X(r.x + r.w * 0.16), Y(r.y + headH + torsoH), r.w * 0.24 * k, legH * k);
+    ctx.fillRect(X(r.x + r.w * 0.60), Y(r.y + headH + torsoH), r.w * 0.24 * k, legH * k);
   }
 
-  function drawEyes(ctx, r, color, ox = 0, oy = 0, k = 1) {
-    const cx = r.x + r.w / 2;
+  function drawEyes(ctx, r, color, ox = 0, oy = 0, k = 1, jitterX = 0) {
+    const cx = r.x + r.w / 2 + jitterX;
     const ey = r.y + r.h * 0.12;
-    const size = Math.max(1, r.w * 0.12) * k;
+    const size = Math.max(1.5, r.w * 0.12) * k;
     ctx.fillStyle = color;
-    ctx.fillRect(ox + (cx - r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
-    ctx.fillRect(ox + (cx + r.w * 0.2) * k - size / 2, oy + ey * k - size / 2, size, size);
-  }
-
-  function byDistance(creatures) {
-    return creatures.slice().sort((a, b) => b.dist - a.dist);
+    ctx.fillRect(ox + (cx - r.w * 0.16) * k - size / 2, oy + (ey + r.h * 0.01) * k - size / 2, size, size);
+    ctx.fillRect(ox + (cx + r.w * 0.18) * k - size / 2, oy + (ey - r.h * 0.01) * k - size / 2, size * 1.15, size * 1.15);
   }
 
   function drawPhoto(ctx, photo, x, y, k) {
@@ -104,8 +123,8 @@
     ctx.fillRect(x, y, vf.w * k, vf.h * k);
     const sorted = photo.rects.slice().sort((a, b) => a.h - b.h);
     for (const r of sorted) {
-      drawSilhouette(ctx, r, PAL.black, ox, oy, k);
-      drawEyes(ctx, r, PAL.red, ox, oy, k);
+      drawSilhouette(ctx, r, PAL.black, ox, oy, k, 0);
+      drawEyes(ctx, r, PAL.red, ox, oy, k, 0);
     }
     ctx.restore();
     ctx.strokeStyle = PAL.white;
@@ -138,29 +157,42 @@
 
   function drawDebug(ctx, s) {
     s.creatures.forEach((c, i) => {
-      text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
+      text(ctx, 'D' + i + ' ' + c.dist.toFixed(2) + ' ' + (c.pose || 'WAIT') + (c.frozen ? ' FROZEN' : ''), 6, 18 + i * 10, PAL.red, 8);
     });
   }
 
+  // 移除微波爐讀秒百分比（TOO FAR XX%），改為三支柱心理狀態提示
   function bestAimHint(s) {
     const cfg = s.cfg;
     const vf = s.vf;
     let best = null;
+    let bestCreature = null;
     for (const c of s.creatures) {
       const r = C.creatureRect(c, cfg);
       const g = C.gradePhoto(vf, r, cfg);
       if (g.completeness <= 0 && !c.frozen) continue;
-      if (!best || g.score > best.score) best = g;
+      if (!best || g.score > best.score) {
+        best = g;
+        bestCreature = c;
+      }
     }
-    if (!best) return null;
+    if (!best || !bestCreature) return null;
     if (best.grade === 'EVIDENCE') {
-      return { label: 'EVIDENCE READY!', color: PAL.red, ready: true };
+      return { label: 'SHOOT NOW!', color: PAL.red, ready: true };
     }
-    if (best.fill < cfg.evidenceFill) {
-      const pct = Math.min(99, Math.round((best.fill / cfg.evidenceFill) * 100));
-      return { label: 'TOO FAR (' + pct + '%)', color: PAL.blue, ready: false };
+    if (best.fill >= cfg.evidenceFill && bestCreature.frozen) {
+      return { label: 'PULL DOWN: FULL BODY', color: PAL.red, ready: false };
     }
-    return { label: 'FIT FULL BODY', color: PAL.red, ready: false };
+    if (bestCreature.frozen && (bestCreature.tension || 0) >= 0.65) {
+      return { label: 'IT IS TREMBLING...', color: PAL.red, ready: false };
+    }
+    if (bestCreature.frozen && bestCreature.pose === 'COIL') {
+      return { label: 'COILED — CAREFUL', color: PAL.red, ready: false };
+    }
+    if (bestCreature.frozen) {
+      return { label: 'FROZEN — LOOK AWAY', color: PAL.blue, ready: false };
+    }
+    return { label: 'LOCK ITS EYES!', color: PAL.red, ready: false };
   }
 
   function drawPlay(ctx, s) {
@@ -170,7 +202,7 @@
     ctx.fillRect(0, 0, S, S);
     drawScenery(ctx, PAL.blue);
     for (const c of s.creatures) {
-      if (c.glintVisible > 0) drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1);
+      if (c.glintVisible > 0) drawEyes(ctx, C.creatureRect(c, cfg), PAL.red, 0, 0, 1, 0);
     }
 
     const lit = s.blindTimer <= 0;
@@ -192,8 +224,11 @@
           drawPine(ctx, it.t, PAL.blue);
         } else {
           const r = C.creatureRect(it.c, cfg);
-          drawSilhouette(ctx, r, PAL.black, 0, 0, 1);
-          drawEyes(ctx, r, PAL.red, 0, 0, 1);
+          const jitter = it.c.frozen && (it.c.tension || 0) > 0.2
+            ? Math.round(Math.sin((s.phaseTime || 0) * 55) * it.c.tension * 3)
+            : 0;
+          drawSilhouette(ctx, r, PAL.black, 0, 0, 1, jitter);
+          drawEyes(ctx, r, PAL.red, 0, 0, 1, jitter);
         }
       }
     } else {
@@ -207,6 +242,15 @@
     if (!lit) ctx.setLineDash([4, 4]);
     ctx.strokeRect(vf.x + 0.5, vf.y + 0.5, vf.w - 1, vf.h - 1);
     ctx.setLineDash([]);
+
+    // 繪製凝視壓制線刻度（gazeBox 頂邊）：紅眼低於此刻度線時才會被凍結
+    const gBox = C.gazeBox ? C.gazeBox(vf, cfg) : { y: vf.y + vf.h * 0.26 };
+    const gy = Math.round(gBox.y);
+    const anyFrozen = s.creatures.some((c) => c.frozen);
+    ctx.fillStyle = anyFrozen ? PAL.red : PAL.yellow;
+    ctx.fillRect(vf.x + 2, gy, 6, 1);
+    ctx.fillRect(vf.x + vf.w - 8, gy, 6, 1);
+
     ctx.fillStyle = PAL.yellow;
     ctx.fillRect(vf.x + vf.w / 2 - 3, vf.y + vf.h / 2, 7, 1);
     ctx.fillRect(vf.x + vf.w / 2, vf.y + vf.h / 2 - 3, 1, 7);
@@ -236,7 +280,7 @@
     drawScenery(ctx, PAL.blue);
     text(ctx, 'EVIDENCE 1976', S / 2, 50, PAL.white, 22, 'center');
     if (Math.floor(s.phaseTime * 0.8) % 3 !== 0) {
-      drawEyes(ctx, C.creatureRect({ x: 160, dist: 0.6 }, s.cfg), PAL.red, 0, 0, 1);
+      drawEyes(ctx, C.creatureRect({ x: 160, dist: 0.6 }, s.cfg), PAL.red, 0, 0, 1, 0);
     }
     text(ctx, 'IT ONLY MOVES', S / 2, 205, PAL.white, 12, 'center');
     text(ctx, 'WHEN YOU LOOK AWAY.', S / 2, 222, PAL.white, 12, 'center');

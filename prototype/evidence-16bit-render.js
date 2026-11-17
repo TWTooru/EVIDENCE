@@ -1,4 +1,4 @@
-/* EVIDENCE 1989: BLACK RAIN — 16-bit 4-Layer Parallax Canvas Renderer (320x240 logical). */
+/* EVIDENCE 1989: BLACK RAIN — Pure 16-bit 4-Layer Parallax Renderer (Car as silent visual frame, zero UI clutter). */
 (function (root) {
   'use strict';
 
@@ -20,20 +20,21 @@
     midPine: '#182b33',
     nearPine: '#0c161c',
     mudGround: '#12131a',
-    headlightBeam: '#d6cf94',
     creatureShadow: '#050608',
     creatureRim: '#2e3d4f',
+    corpsePale: '#cfd6de',
+    corpseDim: '#7f8c9a',
     eyeRed: '#ff2233',
     eyeGlow: '#ff7788',
-    glassTint: '#1a2c3d',
+    breathFog: 'rgba(180, 205, 225, 0.16)',
     rainStreak: '#527394',
-    cockpitDark: '#121014',
-    cockpitTrim: '#26222b',
-    cockpitLeather: '#362b28',
-    dashPanel: '#1c1920',
+    cockpitDark: '#100e13',
+    cockpitTrim: '#221f28',
+    cockpitLeather: '#2e2523',
+    dashPanel: '#16141a',
     amberGlow: '#ffb000',
-    amberDim: '#704d00',
-    radioGreen: '#38d973',
+    amberDim: '#694800',
+    quartzGreen: '#38d973',
     dangerRed: '#e62e2e',
     polaroidWhite: '#e8e6df',
   };
@@ -85,85 +86,181 @@
 
   function drawCreature16Bit(ctx, c, state) {
     const { cockpit } = state;
-    if (c.dir === 'ROOF' && !cockpit.lookUp) return;
-
-    const r = C.creatureScreenRect(c, cockpit.panX, cockpit.lookUp);
+    const r = C.creatureScreenRect(c, cockpit.panX);
     if (r.x + r.w < 0 || r.x > W) return;
 
-    const gazed = C.isCreatureGazed(c, state);
-    const litByHeadlights = cockpit.headlightsOn && c.dir === 'FRONT' && !cockpit.blackout;
+    const inCone = C.isCreatureInViewCone(c, state);
     const litByLightning = cockpit.lightningFlash > 0.05;
 
-    // In 16-bit horror, creature is a hulking multi-jointed cryptid silhouette, not a stick figure
-    const cx = Math.round(r.x + r.w / 2);
-    const headR = Math.max(4, Math.round(r.w * 0.32));
-    const shoulderW = Math.round(r.w * 1.15);
-    const torsoW = Math.round(r.w * 0.72);
-
-    ctx.fillStyle = PAL.creatureShadow;
-    // Hunched shoulders & elongated torso
-    ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.3), shoulderW, Math.round(r.h * 0.32));
-    ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.8), torsoW, Math.round(r.h * 0.45));
-    // Head
-    ctx.fillRect(Math.round(cx - headR), r.y, headR * 2, Math.round(headR * 1.7));
-    // Long clawed arms hanging down
-    const armW = Math.max(2, Math.round(r.w * 0.18));
-    ctx.fillRect(Math.round(cx - shoulderW / 2 - armW + 1), Math.round(r.y + headR * 1.5), armW, Math.round(r.h * 0.62));
-    ctx.fillRect(Math.round(cx + shoulderW / 2 - 1), Math.round(r.y + headR * 1.5), armW, Math.round(r.h * 0.62));
-
-    // Rim highlight when illuminated by headlights or lightning
-    if (litByHeadlights || litByLightning || gazed) {
-      ctx.fillStyle = PAL.creatureRim;
-      ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.3), shoulderW, 2);
-      ctx.fillRect(Math.round(cx - headR), r.y, headR * 2, 2);
+    // Peripheral Darkness: outside direct view cone (and unlit by lightning), hide body and only glint red eyes
+    if (!inCone && !litByLightning) {
+      if ((c.glintVisible || 0) > 0 || c.dist < 0.35) {
+        const cx = Math.round(r.x + r.w / 2);
+        const headR = Math.max(4, Math.round(r.w * 0.32));
+        const eyeSep = Math.max(3, Math.round(headR * 0.55));
+        ctx.fillStyle = PAL.eyeRed;
+        ctx.fillRect(Math.round(cx - eyeSep - 1), r.eyeY, 2, 2);
+        ctx.fillRect(Math.round(cx + eyeSep - 1), r.eyeY, 2, 2);
+      }
+      return;
     }
 
-    // Piercing crimson eyes
-    const eyeSep = Math.max(3, Math.round(headR * 0.55));
-    const eyeSize = c.dist < 0.38 ? 3 : 2;
-    ctx.fillStyle = PAL.eyeRed;
-    ctx.fillRect(Math.round(cx - eyeSep - 1), r.eyeY, eyeSize, eyeSize);
-    ctx.fillRect(Math.round(cx + eyeSep - 1), r.eyeY, eyeSize, eyeSize);
+    // Dead-still statue body, with uncanny facial details slowly emerging the longer you lock eyes with it!
+    const cx = Math.round(r.x + r.w / 2);
+    const headR = Math.max(4, Math.round(r.w * 0.34));
+    const shoulderW = Math.round(r.w * 1.18);
+    const torsoW = Math.round(r.w * 0.68);
+    const armW = Math.max(2, Math.round(r.w * 0.18));
+    const pose = c.pose || 'WAIT';
+    const strain = cockpit.eyeStrain || 0;
+    const time = state.night ? state.night.timeElapsed : 0;
 
-    if (c.dist < 0.45 || gazed) {
-      ctx.fillStyle = PAL.eyeGlow;
-      ctx.fillRect(Math.round(cx - eyeSep), r.eyeY, 1, 1);
-      ctx.fillRect(Math.round(cx + eyeSep), r.eyeY, 1, 1);
+    // Subliminal 1-frame broken-neck snap right as your sanity/eyelids strain (> 0.58)
+    const subliminalSnap = (!cockpit.vfActive && strain > 0.58 && Math.sin(time * 33) > 0.89)
+      ? Math.max(3, Math.round(headR * 0.55)) * (c.id % 2 === 0 ? -1 : 1)
+      : 0;
+    const stareReveal = clamp(strain * 1.25 + (1 - c.dist) * 0.65, 0, 1);
+
+    ctx.fillStyle = PAL.creatureShadow;
+    let headCenterX = cx + subliminalSnap;
+    let headTopY = r.y;
+
+    if (pose === 'WAIT') {
+      // Pose 1: WAIT — Tall, crooked-neck gaunt figure standing dead motionless between pines
+      const headOffset = Math.max(2, Math.round(headR * 0.42));
+      headCenterX = cx + headOffset + subliminalSnap;
+      // Thin crooked neck stalk
+      ctx.fillRect(Math.round(cx - 2), Math.round(r.y + headR * 1.2), 4, Math.round(headR * 0.8));
+      // Gaunt shoulders & narrow ribcage
+      ctx.fillRect(Math.round(cx - shoulderW / 2), Math.round(r.y + headR * 1.5), shoulderW, Math.round(r.h * 0.24));
+      ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.9), torsoW, Math.round(r.h * 0.48));
+      // Elongated skull
+      ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, Math.round(headR * 1.85));
+      // Unnaturally long hanging arms ending in thin 3-pronged claws past the knees
+      const armTop = Math.round(r.y + headR * 1.6);
+      const armLen = Math.round(r.h * 0.68);
+      ctx.fillRect(Math.round(cx - shoulderW / 2 - armW + 1), armTop, armW, armLen);
+      ctx.fillRect(Math.round(cx + shoulderW / 2 - 1), armTop, armW, armLen);
+      ctx.fillRect(Math.round(cx - shoulderW / 2 - armW - 1), armTop + armLen, 1, 5);
+      ctx.fillRect(Math.round(cx + shoulderW / 2 + armW), armTop + armLen, 1, 5);
+    } else if (pose === 'COIL') {
+      // Pose 2: COIL — Contorted spider-like crouch, jagged dorsal spine, wide bent limbs poised to leap
+      const crouchY = Math.round(r.y + r.h * 0.14);
+      headTopY = crouchY;
+      const wideW = Math.round(shoulderW * 1.38);
+      ctx.fillRect(Math.round(cx - 2), Math.round(crouchY - headR * 0.65), 4, Math.round(headR * 0.85));
+      ctx.fillRect(Math.round(cx - wideW / 2), Math.round(crouchY + headR * 0.8), wideW, Math.round(r.h * 0.26));
+      ctx.fillRect(Math.round(cx - torsoW * 0.62), Math.round(crouchY + headR * 1.3), Math.round(torsoW * 1.24), Math.round(r.h * 0.42));
+      ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, Math.round(headR * 1.75));
+      ctx.fillRect(Math.round(cx - wideW / 2 - armW * 2), Math.round(crouchY + headR * 0.35), armW * 2, Math.round(r.h * 0.48));
+      ctx.fillRect(Math.round(cx + wideW / 2), Math.round(crouchY + headR * 0.35), armW * 2, Math.round(r.h * 0.48));
+    } else {
+      // Pose 3: LUNGE / WINDOW SLAM — Towering nightmare pressed right up against your window glass!
+      const lungeW = Math.round(shoulderW * 1.28);
+      ctx.fillRect(Math.round(cx - lungeW / 2), Math.round(r.y + headR * 1.15), lungeW, Math.round(r.h * 0.38));
+      ctx.fillRect(Math.round(cx - torsoW / 2), Math.round(r.y + headR * 1.65), torsoW, Math.round(r.h * 0.52));
+      ctx.fillRect(Math.round(headCenterX - headR * 1.08), headTopY, Math.round(headR * 2.16), Math.round(headR * 2.05));
+      const clawH = Math.round(r.h * 0.58);
+      ctx.fillRect(Math.round(cx - lungeW / 2 - armW - 1), Math.max(2, Math.round(r.y - headR * 0.7)), armW + 2, clawH);
+      ctx.fillRect(Math.round(cx + lungeW / 2 - 1), Math.max(2, Math.round(r.y - headR * 0.7)), armW + 2, clawH);
+
+      // Cold breath condensation fogging the glass pane at close range
+      if (c.dist <= state.cfg.evidenceDist) {
+        ctx.fillStyle = PAL.breathFog;
+        ctx.fillRect(Math.round(headCenterX - headR * 1.35), Math.round(r.eyeY + headR * 0.15), Math.round(headR * 2.7), Math.round(headR * 1.6));
+      }
+
+      // When slammed flat against the glass (dist <= 0.24), corpse-pale 4-fingered hands press flat on the window!
+      if (c.dist <= 0.24) {
+        const palmY = Math.round(headTopY + headR * 0.85);
+        const leftPalmX = Math.round(cx - lungeW * 0.68);
+        const rightPalmX = Math.round(cx + lungeW * 0.52);
+        ctx.fillStyle = PAL.corpseDim;
+        ctx.fillRect(leftPalmX, palmY, 10, 12);
+        ctx.fillRect(rightPalmX, palmY, 10, 12);
+        ctx.fillStyle = PAL.corpsePale;
+        for (let f = 0; f < 4; f++) {
+          ctx.fillRect(leftPalmX - 1 + f * 3, palmY - 9, 2, 10);
+          ctx.fillRect(rightPalmX - 1 + f * 3, palmY - 9, 2, 10);
+        }
+      }
+    }
+
+    // Subtle moonlight/storm rim highlight & gaunt pale rib slits when close or stared at
+    ctx.fillStyle = PAL.creatureRim;
+    const rimW = pose === 'COIL' ? Math.round(shoulderW * 1.38) : shoulderW;
+    const rimY = pose === 'COIL' ? Math.round(r.y + r.h * 0.14 + headR * 0.8) : Math.round(r.y + headR * 1.5);
+    ctx.fillRect(Math.round(cx - rimW / 2), rimY, rimW, 2);
+    ctx.fillRect(Math.round(headCenterX - headR), headTopY, headR * 2, 2);
+
+    if (stareReveal > 0.48 && headR >= 7) {
+      // Faint corpse-pale gaunt cheekbones & ribcage lines emerging in the dark
+      ctx.fillStyle = PAL.corpseDim;
+      for (let rib = 0; rib < 3; rib++) {
+        ctx.fillRect(Math.round(cx - torsoW * 0.32), rimY + 8 + rib * 5, Math.round(torsoW * 0.64), 1);
+      }
+    }
+
+    // Uncanny Eyes & Rictus Grin: bleed out of the shadow the longer you stare!
+    const eyeY = pose === 'COIL' ? Math.round(r.eyeY + r.h * 0.12) : r.eyeY;
+    const eyeSep = Math.max(3, Math.round(headR * 0.52));
+
+    if (stareReveal > 0.36) {
+      // Wide, hollow corpse-pale sclera staring unblinking straight into your soul!
+      const scleraW = c.dist <= 0.28 ? 6 : (headR >= 8 ? 4 : 3);
+      const scleraH = c.dist <= 0.28 ? 5 : 3;
+      ctx.fillStyle = PAL.corpsePale;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - scleraW / 2), eyeY - 1, scleraW, scleraH);
+      // Pinpoint blood-red / void pupils dead center
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(Math.round(headCenterX - eyeSep), eyeY, 2, 2);
+      ctx.fillRect(Math.round(headCenterX + eyeSep), eyeY, 2, 2);
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep), eyeY, 1, 1);
+      ctx.fillRect(Math.round(headCenterX + eyeSep), eyeY, 1, 1);
+    } else {
+      const eyeSize = c.dist <= state.cfg.lungeDist ? 3 : 2;
+      ctx.fillStyle = PAL.eyeRed;
+      ctx.fillRect(Math.round(headCenterX - eyeSep - 1), eyeY, eyeSize, eyeSize);
+      ctx.fillRect(Math.round(headCenterX + eyeSep - 1), eyeY, eyeSize, eyeSize);
+    }
+
+    // Uncanny stretched vertical rictus grin with vertical teeth slits!
+    if (stareReveal > 0.52 || pose === 'LUNGE') {
+      const mouthW = Math.max(4, Math.round(headR * 0.95));
+      const mouthH = c.dist <= 0.26 ? Math.max(7, Math.round(headR * 0.85)) : Math.max(3, Math.round(headR * 0.45));
+      const mouthX = Math.round(headCenterX - mouthW / 2);
+      const mouthY = Math.round(eyeY + Math.max(4, headR * 0.48));
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(mouthX - 1, mouthY - 1, mouthW + 2, mouthH + 2);
+      ctx.fillStyle = c.dist <= 0.26 ? PAL.corpsePale : PAL.corpseDim;
+      for (let tx = 0; tx < mouthW; tx += 2) {
+        ctx.fillRect(mouthX + tx, mouthY, 1, mouthH);
+      }
     }
   }
 
   function drawExteriorLayers(ctx, state) {
     const { cockpit } = state;
     const panX = cockpit.panX;
-    const lookUpOffset = cockpit.lookUp ? 34 : 0;
-    const horizonY = 104 + lookUpOffset;
+    const horizonY = 104;
 
-    // Layer 1: Sky & Lightning
+    // Layer 1: Storm Sky & Lightning
     ctx.fillStyle = cockpit.lightningFlash > 0.1 ? PAL.lightningSky : PAL.nightSky;
     ctx.fillRect(0, 0, W, horizonY);
 
-    // Storm cloud bands (Parallax 0.2)
     ctx.fillStyle = PAL.stormCloud;
     for (let i = 0; i < 6; i++) {
       const cx = ((i * 110 - Math.round(panX * 0.2)) % (W + 120)) - 40;
-      ctx.fillRect(cx, 14 + (i % 2) * 12 + lookUpOffset * 0.4, 86, 10);
+      ctx.fillRect(cx, 14 + (i % 2) * 12, 86, 10);
     }
 
-    // Ground / Mud road
+    // Mud ground
     ctx.fillStyle = PAL.mudGround;
     ctx.fillRect(0, horizonY, W, H - horizonY);
 
-    // Headlight cone in FRONT zone when active
-    if (cockpit.headlightsOn && !cockpit.blackout) {
-      const frontCenterScreenX = 320 - panX;
-      ctx.save();
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = PAL.headlightBeam;
-      ctx.fillRect(Math.round(frontCenterScreenX - 95), horizonY - 25, 190, 110);
-      ctx.restore();
-    }
-
-    // Layer 2: Distant treeline (Parallax 0.45)
+    // Layer 2: Far pine treeline (Parallax 0.55)
     for (const t of FOREST_TREES) {
       if (t.layer === 1) {
         const sx = t.wx - panX * 0.55;
@@ -171,12 +268,12 @@
       }
     }
 
-    // Creatures behind midground trees or stepping out
+    // Creatures lurking in the treeline
     for (const c of state.creatures) {
-      if (c.dir !== 'ROOF') drawCreature16Bit(ctx, c, state);
+      drawCreature16Bit(ctx, c, state);
     }
 
-    // Midground trees (Parallax 0.85)
+    // Near/midground pine trees (Parallax 0.85)
     for (const t of FOREST_TREES) {
       if (t.layer === 2) {
         const sx = t.wx - panX * 0.85;
@@ -187,87 +284,30 @@
   }
 
   function drawWindowGlassLayer(ctx, state) {
-    const { cockpit } = state;
-    const panX = cockpit.panX;
+    const panX = state.cockpit.panX;
     const time = state.night.timeElapsed || 0;
 
-    // Front Windshield rain blur overlay (World X 165..475)
-    const frontLeft = Math.round(165 - panX);
-    const frontRight = Math.round(475 - panX);
-    const clampedLeft = clamp(frontLeft, 0, W);
-    const clampedRight = clamp(frontRight, 0, W);
-
-    if (clampedRight > clampedLeft && cockpit.rainBlur > 0.2) {
-      // Crisp 16-bit raindrop & condensation stipple lines instead of muddy full-window smear
-      const density = Math.floor((cockpit.rainBlur - 0.15) * 28);
-      ctx.fillStyle = PAL.glassTint;
-      for (let r = 0; r < density; r++) {
-        const bandY = 26 + ((r * 19) % 132);
-        const bandX = clampedLeft + ((r * 43) % Math.max(1, clampedRight - clampedLeft - 18));
-        ctx.fillRect(bandX, bandY, 16, 2);
-      }
-      if (cockpit.rainBlur > state.cfg.blurThreshold) {
-        ctx.fillStyle = 'rgba(26, 44, 61, 0.38)';
-        ctx.fillRect(clampedLeft, 22, clampedRight - clampedLeft, 140);
-        const warnX = Math.round((clampedLeft + clampedRight) / 2);
-        text(ctx, 'WINDSHIELD BLURRED - PRESS [1] WIPERS!', warnX, 34, PAL.dangerRed, 8, 'center');
-      }
-    }
-
-    // Rain streaks across all visible glass
+    // Purely atmospheric 16-bit rain streaks across all glass panes (never blocks gaze)
     ctx.fillStyle = PAL.rainStreak;
-    for (let i = 0; i < 38; i++) {
-      const rx = ((i * 37 + Math.round(time * 90) - Math.round(panX * 0.9)) % W + W) % W;
-      const ry = ((i * 53 + Math.round(time * 210)) % 165);
+    for (let i = 0; i < 36; i++) {
+      const rx = ((i * 37 + Math.round(time * 88) - Math.round(panX * 0.9)) % W + W) % W;
+      const ry = ((i * 53 + Math.round(time * 205)) % 166);
       ctx.fillRect(rx, ry, 1, 7);
-    }
-
-    // Wiper blades in front windshield
-    if (clampedRight > clampedLeft) {
-      const angle = Math.sin(cockpit.wiperPhase * Math.PI * 2) * 0.65;
-      const pivot1X = Math.round(255 - panX);
-      const pivot2X = Math.round(375 - panX);
-      const pivotY = 166 + (cockpit.lookUp ? 30 : 0);
-      const tipOffsetX = Math.round(Math.sin(angle) * 55);
-      const tipOffsetY = Math.round(Math.cos(angle) * 68);
-
-      ctx.strokeStyle = PAL.voidBlack;
-      ctx.lineWidth = 3;
-      for (const px of [pivot1X, pivot2X]) {
-        ctx.beginPath();
-        ctx.moveTo(px, pivotY);
-        ctx.lineTo(px + tipOffsetX, pivotY - tipOffsetY);
-        ctx.stroke();
-      }
     }
   }
 
   function drawCockpitInterior(ctx, state) {
     const { cockpit, camera, night } = state;
     const panX = cockpit.panX;
-    const lookUpOffset = cockpit.lookUp ? 34 : 0;
 
-    // Roof liner & Skylight hatch (when looking up)
-    const roofH = 22 + lookUpOffset;
+    // Roof headliner
+    const roofH = 22;
     ctx.fillStyle = PAL.cockpitDark;
     ctx.fillRect(0, 0, W, roofH);
     ctx.fillStyle = PAL.cockpitTrim;
     ctx.fillRect(0, roofH - 3, W, 3);
 
-    if (cockpit.lookUp) {
-      const hatchX = Math.round(240 - panX);
-      ctx.fillStyle = PAL.nightSky;
-      ctx.fillRect(hatchX, 4, 160, roofH - 8);
-      ctx.strokeStyle = PAL.cockpitLeather;
-      ctx.strokeRect(hatchX, 4, 160, roofH - 8);
-      // Draw roof creature if present
-      for (const c of state.creatures) {
-        if (c.dir === 'ROOF') drawCreature16Bit(ctx, c, state);
-      }
-      text(ctx, 'ROOF SKYLIGHT', hatchX + 42, roofH - 13, PAL.amberDim, 8);
-    }
-
-    // Left & Right A-Pillars separating side windows from front windshield (World X = 165 and 475)
+    // Left & Right A-Pillars physically dividing the 3 windows (World X = 160 and 468)
     const leftPillarX = Math.round(160 - panX);
     const rightPillarX = Math.round(468 - panX);
     ctx.fillStyle = PAL.cockpitDark;
@@ -277,156 +317,121 @@
     ctx.fillRect(leftPillarX + 5, 0, 3, H);
     ctx.fillRect(rightPillarX - 8, 0, 3, H);
 
-    // Far left & far right door frames
+    // Outer door frames
     ctx.fillStyle = PAL.cockpitDark;
     ctx.fillRect(0, 0, Math.max(0, 14 - panX), H);
     const rightEdge = Math.round(626 - panX);
     if (rightEdge < W) ctx.fillRect(rightEdge, 0, W - rightEdge, H);
 
-    // Rearview Mirror (Top center at World X = 320)
+    // Rearview Mirror (atmospheric diegetic reflection when an unwatched figure creeps close)
     const mirrorX = Math.round(282 - panX);
     const mirrorY = roofH + 4;
     if (mirrorX + 76 > 0 && mirrorX < W) {
       ctx.fillStyle = PAL.cockpitTrim;
       ctx.fillRect(mirrorX + 34, roofH - 2, 8, 8);
       ctx.fillStyle = PAL.voidBlack;
-      ctx.fillRect(mirrorX, mirrorY, 76, 22);
+      ctx.fillRect(mirrorX, mirrorY, 76, 20);
       ctx.strokeStyle = PAL.cockpitLeather;
-      ctx.strokeRect(mirrorX, mirrorY, 76, 22);
+      ctx.strokeRect(mirrorX, mirrorY, 76, 20);
 
-      // Rearview mirror hints at closest creature's red eyes if stalking
-      const roofOrClose = state.creatures.find((c) => c.dist < 0.55);
-      if (roofOrClose && !cockpit.blackout) {
+      const closeUnwatched = state.creatures.find((c) => c.dist < 0.52 && !C.isCreatureInViewCone(c, state));
+      if (closeUnwatched) {
         ctx.fillStyle = PAL.eyeRed;
-        ctx.fillRect(mirrorX + 34, mirrorY + 10, 2, 2);
-        ctx.fillRect(mirrorX + 40, mirrorY + 10, 2, 2);
+        ctx.fillRect(mirrorX + 35, mirrorY + 9, 2, 2);
+        ctx.fillRect(mirrorX + 41, mirrorY + 9, 2, 2);
       }
     }
 
-    // Lower Dashboard & Door Panels
-    const dashY = 164 + Math.round(lookUpOffset * 0.5);
+    // Silent Dead Dashboard & Door Sills (pure visual framing — zero switches, zero gauges)
+    const dashY = 172;
     ctx.fillStyle = PAL.cockpitLeather;
-    ctx.fillRect(0, dashY - 4, W, 6);
+    ctx.fillRect(0, dashY - 4, W, 5);
     ctx.fillStyle = PAL.dashPanel;
     ctx.fillRect(0, dashY, W, H - dashY);
 
-    // Left Window Label (World X = 75)
-    text(ctx, '< LEFT WINDOW', 40 - panX, dashY + 8, PAL.amberDim, 8);
-
-    // Right Window & Passenger Film Box (World X = 540)
-    const passX = Math.round(500 - panX);
-    if (passX + 110 > 0 && passX < W) {
-      text(ctx, 'RIGHT WINDOW >', passX + 12, dashY + 8, PAL.amberDim, 8);
-      ctx.fillStyle = PAL.cockpitLeather;
-      ctx.fillRect(passX + 10, dashY + 22, 86, 36);
-      ctx.strokeStyle = PAL.amberDim;
-      ctx.strokeRect(passX + 10, dashY + 22, 86, 36);
-      text(ctx, 'KODAK 1600 ASA', passX + 16, dashY + 27, PAL.amberGlow, 7);
-      text(ctx, 'FILM LEFT: ' + camera.filmLeft, passX + 16, dashY + 40, PAL.polaroidWhite, 8);
-    }
-
-    // Center Dashboard Instruments (World X = 190..450)
-    const dashCenterX = Math.round(320 - panX);
-    const glowColor = cockpit.blackout ? PAL.amberDim : PAL.amberGlow;
-
-    // Steering Wheel (World X = 248)
+    // Dead Steering Wheel silhouette (World X = 248)
     const wheelX = Math.round(248 - panX);
     if (wheelX + 50 > 0 && wheelX - 50 < W) {
       ctx.strokeStyle = PAL.cockpitDark;
       ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.arc(wheelX, dashY + 28, 34, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.arc(wheelX, dashY + 26, 34, Math.PI * 1.1, Math.PI * 1.9);
       ctx.stroke();
       ctx.lineWidth = 1;
     }
 
-    // Instrument Cluster: Battery, Wipers, Headlights, AM Radio
-    const instX = dashCenterX - 90;
-    ctx.fillStyle = PAL.voidBlack;
-    ctx.fillRect(instX, dashY + 8, 195, 58);
-    ctx.strokeStyle = PAL.cockpitTrim;
-    ctx.strokeRect(instX, dashY + 8, 195, 58);
-
-    // 1. Battery Gauge
-    const battPct = Math.round(cockpit.battery);
-    const battColor = battPct <= 25 ? PAL.dangerRed : glowColor;
-    text(ctx, 'BATT:' + battPct + '%', instX + 6, dashY + 13, battColor, 8);
-    ctx.fillStyle = PAL.amberDim;
-    ctx.fillRect(instX + 6, dashY + 24, 52, 6);
-    ctx.fillStyle = battColor;
-    ctx.fillRect(instX + 6, dashY + 24, Math.round(52 * (battPct / 100)), 6);
-
-    // 2. Wipers & Headlights indicators
-    const wipText = '[1]WIPER:' + (cockpit.wipersOn ? 'ON' : 'OFF');
-    const hlText = '[2]LIGHT:' + (cockpit.headlightsOn ? 'ON' : 'OFF');
-    text(ctx, wipText, instX + 6, dashY + 36, cockpit.wipersOn ? PAL.radioGreen : PAL.amberDim, 7);
-    text(ctx, hlText, instX + 6, dashY + 48, cockpit.headlightsOn ? PAL.radioGreen : PAL.amberDim, 7);
-
-    // 3. Supernatural AM Radio Radar
-    const radioX = instX + 82;
-    text(ctx, 'AM 1610kHz RADAR', radioX, dashY + 13, glowColor, 7);
-    ctx.fillStyle = '#09140d';
-    ctx.fillRect(radioX, dashY + 24, 104, 24);
-    ctx.strokeStyle = PAL.amberDim;
-    ctx.strokeRect(radioX, dashY + 24, 104, 24);
-
-    if (!cockpit.blackout) {
-      const panMarkerX = radioX + 52 + Math.round(cockpit.radioPan * 38);
-      ctx.fillStyle = cockpit.radioIntensity > 0.55 ? PAL.dangerRed : PAL.radioGreen;
-      const barH = Math.max(2, Math.round(cockpit.radioIntensity * 18));
-      for (let b = -3; b <= 3; b++) {
-        const h = Math.max(2, barH - Math.abs(b) * 3);
-        ctx.fillRect(panMarkerX + b * 4, dashY + 36 - Math.round(h / 2), 2, h);
-      }
-      const dirHint = cockpit.radioPan < -0.3 ? '<< L' : cockpit.radioPan > 0.3 ? 'R >>' : 'CTR';
-      text(ctx, dirHint, radioX + 4, dashY + 51, PAL.amberGlow, 7);
-    } else {
-      text(ctx, 'NO POWER', radioX + 26, dashY + 32, PAL.dangerRed, 8);
-    }
-
-    // 4. Clock & Film Top HUD Strip
+    // Diegetic dashboard quartz clock (00:00 -> 05:00 AM)
     const progress = clamp(night.timeElapsed / Math.max(1, night.duration), 0, 1);
     const hour = Math.floor(progress * 5);
     const min = Math.floor((progress * 300) % 60);
     const clockStr = '0' + hour + ':' + (min < 10 ? '0' + min : min) + ' AM';
-    ctx.fillStyle = 'rgba(7, 8, 13, 0.78)';
-    ctx.fillRect(4, 4, 312, 14);
-    text(ctx, 'NIGHT ' + night.number, 8, 7, PAL.amberGlow, 8);
-    text(ctx, clockStr, 76, 7, PAL.polaroidWhite, 8);
-    text(ctx, 'FILM:' + camera.filmLeft, 146, 7, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
-    text(ctx, 'EVIDENCE:' + night.evidenceCount + '/1', 216, 7, night.evidenceCount > 0 ? PAL.radioGreen : PAL.amberGlow, 8);
+
+    const clockBoxX = Math.round(320 - panX) - 32;
+    if (clockBoxX + 64 > 0 && clockBoxX < W) {
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(clockBoxX, dashY + 14, 64, 18);
+      ctx.strokeStyle = PAL.cockpitTrim;
+      ctx.strokeRect(clockBoxX, dashY + 14, 64, 18);
+      text(ctx, clockStr, clockBoxX + 32, dashY + 19, PAL.quartzGreen, 8, 'center');
+    }
+
+    // Passenger-seat Kodak film box (World X = 510)
+    const passX = Math.round(502 - panX);
+    if (passX + 100 > 0 && passX < W) {
+      ctx.fillStyle = PAL.cockpitLeather;
+      ctx.fillRect(passX + 10, dashY + 12, 82, 32);
+      ctx.strokeStyle = PAL.amberDim;
+      ctx.strokeRect(passX + 10, dashY + 12, 82, 32);
+      text(ctx, 'KODAK 1600', passX + 16, dashY + 17, PAL.amberGlow, 7);
+      text(ctx, 'EXP: ' + camera.filmLeft, passX + 16, dashY + 29, PAL.polaroidWhite, 8);
+    }
+
+    // Subtle top headliner strip (Night, Time, Film left, Photo count — zero car clutter)
+    ctx.fillStyle = 'rgba(7, 8, 13, 0.72)';
+    ctx.fillRect(6, 4, 308, 13);
+    text(ctx, 'NIGHT ' + night.number, 10, 6, PAL.amberDim, 8);
+    text(ctx, clockStr, 86, 6, PAL.polaroidWhite, 8);
+    text(ctx, 'FILM:' + camera.filmLeft, 166, 6, camera.filmLeft > 0 ? PAL.amberGlow : PAL.dangerRed, 8);
+    text(ctx, 'PROOF:' + night.evidenceCount + '/1', 238, 6, night.evidenceCount > 0 ? PAL.quartzGreen : PAL.amberDim, 8);
   }
 
   function drawViewfinderAndPhoto(ctx, state) {
     const { cockpit, camera } = state;
 
-    // Viewfinder Overlay when aiming
+    // Optical SLR Viewfinder when camera is held up to your face (covering naked eyes!)
     if (cockpit.vfActive) {
       const vf = C.getViewfinderRect(state);
       const ready = camera.chargeTimer <= 0 && camera.filmLeft > 0;
-      const vfColor = ready ? PAL.amberGlow : PAL.dangerRed;
 
-      ctx.strokeStyle = vfColor;
+      // Heavy dark mask outside the 120x96 optical viewfinder — your naked eyes are blocked by the camera body
+      ctx.fillStyle = 'rgba(5, 6, 9, 0.88)';
+      ctx.fillRect(0, 18, W, vf.y - 18);
+      ctx.fillRect(0, vf.y + vf.h, W, H - (vf.y + vf.h));
+      ctx.fillRect(0, vf.y, vf.x, vf.h);
+      ctx.fillRect(vf.x + vf.w, vf.y, W - (vf.x + vf.w), vf.h);
+
+      // Etched optical frame & center split-prism crosshair (no text prompts!)
+      ctx.strokeStyle = PAL.amberDim;
       ctx.lineWidth = 1;
       ctx.strokeRect(vf.x, vf.y, vf.w, vf.h);
 
-      // Corner brackets & center crosshair
       const cx = Math.round(vf.x + vf.w / 2);
       const cy = Math.round(vf.y + vf.h / 2);
-      ctx.fillStyle = vfColor;
-      ctx.fillRect(cx - 6, cy, 13, 1);
-      ctx.fillRect(cx, cy - 6, 1, 13);
+      ctx.fillStyle = PAL.amberGlow;
+      ctx.fillRect(cx - 7, cy, 5, 1);
+      ctx.fillRect(cx + 3, cy, 5, 1);
+      ctx.fillRect(cx, cy - 7, 1, 5);
+      ctx.fillRect(cx, cy + 3, 1, 5);
 
-      const statusText = camera.chargeTimer > 0
-        ? 'CHARGING FLASH...'
-        : 'READY [SPACE TO SHOOT]';
-      text(ctx, statusText, cx, vf.y + vf.h + 4, vfColor, 8, 'center');
+      // Physical flash capacitor LED dot in top-right corner of optical viewfinder
+      ctx.fillStyle = ready ? PAL.amberGlow : PAL.dangerRed;
+      ctx.fillRect(vf.x + vf.w - 8, vf.y + 5, 3, 3);
     }
 
-    // Glass Flash Reflection Glare (1s blindness)
+    // Glass Flash Reflection Glare (1s whiteout blindness)
     if (camera.blindTimer > 0) {
       ctx.save();
-      ctx.globalAlpha = clamp(camera.blindTimer / state.cfg.blindTime, 0, 0.92);
+      ctx.globalAlpha = clamp(camera.blindTimer / state.cfg.blindTime, 0, 0.94);
       ctx.fillStyle = PAL.polaroidWhite;
       ctx.fillRect(0, 0, W, H);
       ctx.restore();
@@ -445,7 +450,13 @@
       if (p.dir !== 'NONE') {
         ctx.fillStyle = PAL.creatureShadow;
         const silH = Math.round(14 + p.fill * 28);
-        ctx.fillRect(px + 34, py + 49 - silH, 16, silH);
+        const silW = p.pose === 'COIL' ? 22 : (p.pose === 'LUNGE' ? 20 : 16);
+        const silX = px + 42 - Math.round(silW / 2);
+        ctx.fillRect(silX, py + 49 - silH, silW, silH);
+        if (p.pose === 'LUNGE') {
+          ctx.fillRect(silX - 3, py + 45 - silH, 3, Math.round(silH * 0.6));
+          ctx.fillRect(silX + silW, py + 45 - silH, 3, Math.round(silH * 0.6));
+        }
         ctx.fillStyle = PAL.eyeRed;
         ctx.fillRect(px + 38, py + 53 - silH, 2, 2);
         ctx.fillRect(px + 44, py + 53 - silH, 2, 2);
@@ -455,47 +466,99 @@
       text(ctx, p.grade, px + 42, py + 52, gColor, 8, 'center');
       text(ctx, p.score + ' PTS', px + 42, py + 60, PAL.voidBlack, 7, 'center');
     }
+
+    // Pillar 2: Claustrophobic Gaze Tunnel, Static Horror Grain & Involuntary Blink!
+    if ((cockpit.blinkTimer || 0) > 0) {
+      ctx.fillStyle = PAL.voidBlack;
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const dread = cockpit.stareDread || 0;
+      const strain = cockpit.eyeStrain || 0;
+      const time = state.night ? state.night.timeElapsed : 0;
+
+      // 1. Claustrophobic Gaze Tunnel closing in around the creature while locking eyes!
+      if (dread > 0.12 && !cockpit.vfActive) {
+        const gazedCreature = state.creatures.find((c) => C.isCreatureGazed(c, state));
+        const focusX = gazedCreature
+          ? clamp(C.creatureScreenRect(gazedCreature, cockpit.panX).eyeX, 60, W - 60)
+          : W / 2;
+        const sideCurtain = Math.round(dread * 88);
+        const leftWall = Math.max(0, Math.round(focusX - (W / 2 - sideCurtain)));
+        const rightWall = Math.max(0, Math.round(W - (focusX + (W / 2 - sideCurtain))));
+
+        ctx.fillStyle = 'rgba(4, 5, 8, 0.76)';
+        if (leftWall > 0) ctx.fillRect(0, 17, leftWall, H - 17);
+        if (rightWall > 0) ctx.fillRect(W - rightWall, 17, rightWall, H - 17);
+
+        // Flickering analog static scanlines as gaze dread mounts
+        if (dread > 0.42) {
+          const lines = Math.floor((dread - 0.35) * 18);
+          ctx.fillStyle = dread > 0.72 ? 'rgba(230, 46, 46, 0.14)' : 'rgba(207, 214, 222, 0.08)';
+          for (let i = 0; i < lines; i++) {
+            const sy = 20 + ((Math.round(time * 370) + i * 29) % (H - 36));
+            ctx.fillRect(0, sy, W, 1);
+          }
+        }
+      }
+
+      // 2. Heavy spasming eyelids closing down right before involuntary blink
+      if (strain > 0.25) {
+        const ratio = clamp((strain - 0.25) / 0.75, 0, 1);
+        const flutter = ratio > 0.5 ? Math.max(0, Math.round(Math.sin(time * 34) * 7)) : 0;
+        const lidH = Math.round(ratio * ratio * 74) + flutter;
+        const softBandH = Math.round(16 + ratio * 28);
+
+        ctx.fillStyle = 'rgba(5, 6, 9, 0.65)';
+        ctx.fillRect(0, lidH, W, softBandH);
+        ctx.fillRect(0, H - lidH - softBandH, W, softBandH);
+
+        if (lidH > 0) {
+          ctx.fillStyle = PAL.voidBlack;
+          ctx.fillRect(0, 0, W, lidH);
+          ctx.fillRect(0, H - lidH, W, lidH);
+        }
+      }
+    }
   }
 
   function drawOverlayScreens(ctx, state) {
     if (state.phase === 'TITLE') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = PAL.amberGlow;
+      ctx.strokeStyle = PAL.amberDim;
       ctx.strokeRect(12, 12, W - 24, H - 24);
 
-      text(ctx, '16-BIT SURVIVAL HORROR', W / 2, 34, PAL.amberDim, 8, 'center');
-      text(ctx, 'EVIDENCE 1989', W / 2, 54, PAL.amberGlow, 18, 'center');
-      text(ctx, 'BLACK RAIN', W / 2, 76, PAL.eyeRed, 12, 'center');
+      text(ctx, '16-BIT SURVIVAL HORROR', W / 2, 32, PAL.amberDim, 8, 'center');
+      text(ctx, 'EVIDENCE 1989', W / 2, 52, PAL.amberGlow, 18, 'center');
+      text(ctx, 'BLACK RAIN', W / 2, 74, PAL.eyeRed, 12, 'center');
 
-      text(ctx, 'YOUR STATION WAGON IS DEAD IN THE STORM.', W / 2, 108, PAL.polaroidWhite, 8, 'center');
-      text(ctx, '"IT" ONLY APPROACHES WHEN NOT WATCHED.', W / 2, 122, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'CAPTURE 1 CLOSE EVIDENCE PHOTO BEFORE 05:00 AM.', W / 2, 136, PAL.amberGlow, 8, 'center');
+      text(ctx, 'WHILE YOUR NAKED EYES ARE ON IT, IT NEVER MOVES.', W / 2, 108, PAL.polaroidWhite, 7, 'center');
+      text(ctx, 'RAISING YOUR CAMERA COVERS YOUR EYES — LETTING IT APPROACH.', W / 2, 122, PAL.amberGlow, 7, 'center');
+      text(ctx, 'SNAP 1 CLOSE-UP EVIDENCE PHOTO BEFORE 05:00 AM.', W / 2, 136, PAL.polaroidWhite, 7, 'center');
 
-      text(ctx, '[A/D or L/R] TURN HEAD   [W] LOOK ROOF   [1] WIPERS   [2] LIGHTS', W / 2, 168, PAL.rainStreak, 7, 'center');
-      text(ctx, '[HOLD SHIFT / J] RAISE CAMERA     [SPACE / K] FLASH SHUTTER', W / 2, 182, PAL.rainStreak, 7, 'center');
-      text(ctx, 'PRESS [SPACE] OR CLICK TO ENTER THE CAR', W / 2, 206, PAL.radioGreen, 9, 'center');
+      text(ctx, '[A / D or L / R] TURN HEAD          [HOLD SHIFT] RAISE CAMERA', W / 2, 168, PAL.rainStreak, 7, 'center');
+      text(ctx, '[SPACE / CLICK] FIRE FLASH SHUTTER (4 EXPOSURES)', W / 2, 182, PAL.rainStreak, 7, 'center');
+      text(ctx, 'PRESS [SPACE] OR CLICK TO BEGIN', W / 2, 206, PAL.quartzGreen, 9, 'center');
       return true;
     }
 
     if (state.phase === 'NIGHT_INTRO') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      text(ctx, state.night.title || ('NIGHT ' + state.night.number), W / 2, 78, PAL.amberGlow, 14, 'center');
+      text(ctx, state.night.title || ('NIGHT ' + state.night.number), W / 2, 78, PAL.amberGlow, 13, 'center');
       text(ctx, state.night.subtitle || '', W / 2, 104, PAL.polaroidWhite, 8, 'center');
       text(ctx, '4 EXPOSURES. SURVIVE UNTIL 05:00 AM.', W / 2, 132, PAL.rainStreak, 8, 'center');
-      text(ctx, 'PRESS [SPACE] TO BEGIN WATCH', W / 2, 174, PAL.radioGreen, 9, 'center');
+      text(ctx, 'PRESS [SPACE] TO OPEN YOUR EYES', W / 2, 174, PAL.quartzGreen, 9, 'center');
       return true;
     }
 
     if (state.phase === 'NIGHT_SUMMARY') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      text(ctx, '05:00 AM — DAWN BREAKS', W / 2, 54, PAL.radioGreen, 12, 'center');
-      text(ctx, 'EVIDENCE SECURED FOR NIGHT ' + state.night.number, W / 2, 82, PAL.amberGlow, 9, 'center');
-      text(ctx, 'EVIDENCE PHOTOS: ' + state.night.evidenceCount, W / 2, 110, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'BATTERY REMAINING: ' + Math.round(state.cockpit.battery) + '%', W / 2, 126, PAL.polaroidWhite, 8, 'center');
-      text(ctx, 'PRESS [SPACE] FOR NEXT NIGHT', W / 2, 174, PAL.amberGlow, 9, 'center');
+      text(ctx, '05:00 AM — DAWN BREAKS', W / 2, 58, PAL.quartzGreen, 12, 'center');
+      text(ctx, 'EVIDENCE SECURED FOR NIGHT ' + state.night.number, W / 2, 88, PAL.amberGlow, 9, 'center');
+      text(ctx, 'CLOSE-UP PHOTOS: ' + state.night.evidenceCount, W / 2, 118, PAL.polaroidWhite, 8, 'center');
+      text(ctx, 'PRESS [SPACE] FOR NEXT NIGHT', W / 2, 172, PAL.amberGlow, 9, 'center');
       return true;
     }
 
@@ -503,15 +566,14 @@
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
       if (state.endReason === 'BREACH') {
-        // Terrifying close-up cryptid jump scare
         ctx.fillStyle = PAL.eyeRed;
         ctx.fillRect(108, 72, 28, 18);
         ctx.fillRect(184, 72, 28, 18);
-        text(ctx, 'WINDOW BREACHED (' + (state.breachDir || 'CAR') + ')', W / 2, 126, PAL.dangerRed, 12, 'center');
-        text(ctx, 'THE GLASS SHATTERED IN THE DARK.', W / 2, 148, PAL.polaroidWhite, 8, 'center');
+        text(ctx, 'WINDOW SHATTERED (' + (state.breachDir || 'CAR') + ')', W / 2, 126, PAL.dangerRed, 12, 'center');
+        text(ctx, 'YOU TOOK YOUR EYES OFF IT FOR TOO LONG.', W / 2, 148, PAL.polaroidWhite, 8, 'center');
       } else {
         text(ctx, 'INVESTIGATION FAILED: ' + state.endReason, W / 2, 96, PAL.dangerRed, 11, 'center');
-        text(ctx, 'WITHOUT CLEAR PROOF, NOBODY BELIEVED YOU.', W / 2, 124, PAL.polaroidWhite, 8, 'center');
+        text(ctx, 'WITHOUT CLEAR CLOSE-UP PROOF, NOBODY BELIEVED YOU.', W / 2, 124, PAL.polaroidWhite, 8, 'center');
       }
       text(ctx, 'PRESS [SPACE] TO TRY AGAIN', W / 2, 188, PAL.amberGlow, 9, 'center');
       return true;
@@ -520,10 +582,10 @@
     if (state.phase === 'VICTORY') {
       ctx.fillStyle = PAL.voidBlack;
       ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = PAL.radioGreen;
+      ctx.strokeStyle = PAL.quartzGreen;
       ctx.strokeRect(14, 14, W - 28, H - 28);
       text(ctx, 'THE EYE WEEKLY — FRONT PAGE EXCLUSIVE!', W / 2, 46, PAL.amberGlow, 10, 'center');
-      text(ctx, 'SURVIVED ALL 3 NIGHTS IN OREGON', W / 2, 74, PAL.radioGreen, 11, 'center');
+      text(ctx, 'SURVIVED ALL 3 NIGHTS IN OREGON', W / 2, 74, PAL.quartzGreen, 11, 'center');
       text(ctx, 'YOUR PHOTOGRAPHS PROVED ITS EXISTENCE.', W / 2, 106, PAL.polaroidWhite, 8, 'center');
       text(ctx, 'PRESS [SPACE] TO PLAY AGAIN', W / 2, 184, PAL.amberGlow, 9, 'center');
       return true;
@@ -538,7 +600,17 @@
       const scaleX = ctx.canvas.width / W;
       const scaleY = (ctx.canvas.height || W) / H;
       ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      const shake = (state.phase === 'PLAYING' && state.cockpit && state.cockpit.shakeTimer > 0)
+        ? state.cockpit.shakeTimer
+        : 0;
+      if (shake > 0) {
+        const t = state.night ? state.night.timeElapsed : 0;
+        const sx = Math.round(Math.sin(t * 95) * shake * 14 * scaleX);
+        const sy = Math.round(Math.cos(t * 73) * shake * 10 * scaleY);
+        ctx.setTransform(scaleX, 0, 0, scaleY, sx, sy);
+      } else {
+        ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      }
     }
     if (drawOverlayScreens(ctx, state)) return;
 

@@ -20,14 +20,35 @@ test('creatureRect grows as it approaches', () => {
   assert.ok(Math.abs(near.x + near.w / 2 - 160) < 1e-9);
 });
 
-test('isFrozen only when eyes are inside the viewfinder and not blind', () => {
+test('isFrozen only when eyes are inside gazeBox (below top forehead band) and not blind', () => {
   const cfg = C.makeConfig();
   const c = { x: 160, dist: 0.5 };
   const eye = C.eyePoint(c, cfg);
-  const vf = { x: eye.x - 10, y: eye.y - 10, w: 90, h: 110 };
+  const vf = { x: eye.x - 20, y: eye.y - 45, w: 90, h: 110 };
   assert.equal(C.isFrozen(c, vf, 0, cfg), true);
+  // Eyes in upper 26% forehead band of viewfinder -> NOT frozen (enables Pillar 3 full-body pull-down)
+  assert.equal(C.isFrozen(c, { ...vf, y: eye.y - 10 }, 0, cfg), false);
   assert.equal(C.isFrozen(c, { ...vf, x: eye.x + 5 }, 0, cfg), false);
   assert.equal(C.isFrozen(c, vf, 0.5, cfg), false);
+});
+
+test('Pillar 3: at close range, freezing the eyes cuts off the legs (SUSPICIOUS); pulling down frames full body (EVIDENCE) but unfreezes', () => {
+  const cfg = C.makeConfig();
+  const c = { x: 160, dist: 0.25 };
+  const r = C.creatureRect(c, cfg);
+  const eye = C.eyePoint(c, cfg);
+
+  // 1. Keeping eyes inside gazeBox (eye.y = vf.y + 32 >= vf.y + 28.6) -> frozen, but legs hang out bottom
+  const vfLocked = { x: r.x - 20, y: eye.y - 32, w: 90, h: 110 };
+  assert.equal(C.isFrozen(c, vfLocked, 0, cfg), true);
+  const gLocked = C.gradePhoto(vfLocked, r, cfg);
+  assert.equal(gLocked.grade, 'SUSPICIOUS');
+
+  // 2. Pulling viewfinder down by ~15px (vf.y = r.y - 4) -> full body inside (EVIDENCE), but eyes leave gazeBox (unfrozen!)
+  const vfFramed = { x: r.x - 20, y: r.y - 4, w: 90, h: 110 };
+  assert.equal(C.isFrozen(c, vfFramed, 0, cfg), false);
+  const gFramed = C.gradePhoto(vfFramed, r, cfg);
+  assert.equal(gFramed.grade, 'EVIDENCE');
 });
 
 test('gradePhoto: filled and complete is EVIDENCE', () => {
@@ -89,18 +110,35 @@ test('fire in attract starts night 1 with the viewfinder on the creature', () =>
   assert.equal(C.isFrozen(s.creatures[0], s.vf, 0, s.cfg), true);
 });
 
-test('a watched creature does not move; an unwatched one approaches', () => {
+test('Pillar 1 & 2: watched creature builds tension and snaps out on over-stare; unwatched shifts WAIT -> COIL', () => {
   const s = playing();
   const c = s.creatures[0];
   const d0 = c.dist;
   const x0 = c.x;
-  C.step(s, {}, 1);
+
+  // Brief watch keeps position frozen but builds tension
+  C.step(s, {}, 1.0);
   assert.equal(c.dist, d0);
   assert.equal(c.x, x0);
+  assert.ok(c.tension > 0.25);
+
+  // Looking away on first glance in WAIT pose (when tension < 0.35) moves at waitMult; here tension >= 0.31
+  c.tension = 0.1;
+  c.pose = 'WAIT';
   s.vf.x = c.x > 160 ? 0 : C.SCREEN - s.vf.w;
   s.vf.y = 0;
   C.step(s, {}, 0.5);
-  assert.ok(Math.abs(c.dist - (d0 - s.settings.approach * 0.5)) < 1e-9);
+  assert.ok(Math.abs(c.dist - (d0 - s.settings.approach * s.cfg.waitMult * 0.5)) < 1e-9);
+
+  // Over-stare twitch: staring continuously for maxStare breaks gaze and steps closer
+  const eye = C.eyePoint(c, s.cfg);
+  s.vf.x = C.clamp(eye.x - s.vf.w / 2, 0, C.SCREEN - s.vf.w);
+  s.vf.y = C.clamp(eye.y - s.vf.h / 2, 0, C.SCREEN - s.vf.h);
+  const dBeforeTwitch = c.dist;
+  const ev = C.step(s, {}, s.cfg.maxStare + 0.1);
+  assert.ok(ev.includes('twitch'));
+  assert.ok(c.dist < dBeforeTwitch);
+  assert.equal(c.frozen, false);
 });
 
 test('shutter uses film, pushes the creature back, blinds and drains charge', () => {
@@ -199,4 +237,3 @@ test('step accepts undefined input and clamps timeLeft to zero at dawn', () => {
   assert.equal(s.endReason, 'dawn');
   assert.doesNotThrow(() => C.step(s, undefined, 0.1));
 });
-

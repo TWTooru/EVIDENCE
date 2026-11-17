@@ -82,6 +82,7 @@
     switch (event) {
       case 'heartbeat': heartbeat(); break;
       case 'snap': snap(); break;
+      case 'twitch': scream(0.18, 0.22); snap(); break;
       case 'shot': shutter(); charge((cfg && cfg.charge) || 2); break;
       case 'win': charge(0.4); break;
       case 'caught': scream(1.2, 0.5); break;
