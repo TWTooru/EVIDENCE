@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function loadHtmlModules() {
+function loadHtmlModules(extraGlobals = {}) {
   const htmlPath = path.resolve(__dirname, '../../EVIDENCE 1989.html');
   const html = fs.readFileSync(htmlPath, 'utf8');
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  const sandbox = { window: {}, globalThis: {}, Math, Number, Object, Array, Boolean };
+  const sandbox = { window: {}, globalThis: {}, Math, Number, Object, Array, Boolean, ...extraGlobals };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -17,6 +17,7 @@ function loadHtmlModules() {
     C: sandbox.Evidence16BitCore,
     R: sandbox.Evidence16BitRender,
     A: sandbox.Evidence16BitAudio,
+    html,
   };
 }
 
@@ -250,4 +251,68 @@ test('SURVIVAL renderer: unlit creature draws only red eyes (no creatureRim body
   );
   assert.equal(redBorderCalls.length, 0, 'must NEVER draw a red warning border/frame in SURVIVAL flashlight mode');
 });
+
+test('Audio handles SURVIVAL_START and FLASHLIGHT_BLAST events and existing 16-bit suite remains green', () => {
+  const { A } = loadHtmlModules();
+  assert.equal(typeof A.survivalStartStinger, 'function');
+  assert.equal(typeof A.flashlightBlast, 'function');
+  assert.doesNotThrow(() => {
+    A.playEvent({ type: 'SURVIVAL_START' });
+    A.playEvent({ type: 'FLASHLIGHT_BLAST' });
+  });
+
+  // Verify Web Audio synthesis graph actually fires for both events when AudioContext is active
+  const synthCounts = { oscillators: 0, sources: 0 };
+  class MockAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.currentTime = 5.0;
+      this.sampleRate = 44100;
+      this.destination = {};
+    }
+    createGain() {
+      return {
+        gain: { value: 1, setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+        connect() {},
+      };
+    }
+    createOscillator() {
+      synthCounts.oscillators++;
+      return {
+        type: 'sine',
+        frequency: { value: 440, setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+        connect() {},
+        start() {},
+        stop() {},
+      };
+    }
+    createBufferSource() {
+      synthCounts.sources++;
+      return { buffer: null, connect() {}, start() {} };
+    }
+    createBiquadFilter() {
+      return { type: 'lowpass', frequency: { value: 350, setValueAtTime() {} }, connect() {} };
+    }
+    createStereoPanner() {
+      return { pan: { value: 0, setValueAtTime() {} }, connect() {} };
+    }
+    createBuffer(ch, len) {
+      return { getChannelData: () => new Float32Array(len) };
+    }
+  }
+
+  const { A: AudioWithCtx } = loadHtmlModules({ AudioContext: MockAudioContext });
+  AudioWithCtx.init();
+
+  AudioWithCtx.playEvent({ type: 'SURVIVAL_START' });
+  const afterSurvivalOsc = synthCounts.oscillators;
+  const afterSurvivalSrc = synthCounts.sources;
+  assert.ok(afterSurvivalOsc >= 2, 'SURVIVAL_START should synthesize power-down/roar oscillators');
+  assert.ok(afterSurvivalSrc >= 1, 'SURVIVAL_START should synthesize thunder/noise rumble');
+
+  AudioWithCtx.playEvent({ type: 'FLASHLIGHT_BLAST' });
+  assert.ok(synthCounts.oscillators > afterSurvivalOsc, 'FLASHLIGHT_BLAST should synthesize strobe/recharge oscillators');
+  assert.ok(synthCounts.sources > afterSurvivalSrc, 'FLASHLIGHT_BLAST should synthesize halogen discharge noise');
+});
+
 

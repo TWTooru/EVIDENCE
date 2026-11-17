@@ -95,8 +95,9 @@
   </div>
 
   <div class="help">
-    [<span>A / D 或 ← / →</span>] 轉頭巡視守望台窗戶（<b>正眼直視＝100% 凍結黑影</b>；但<b>盯超過時間侵蝕滿載會撞裂玻璃並換窗，累積 3 次斷訊必死</b>！）<br>
-    [<span>按住 SHIFT / J / 右鍵</span>] 舉起相機遮眼誘敵（<b>觀景窗由失焦模糊隨黑影逼近逐漸變清晰</b>）　[<span>畫面清晰時按 SPACE / K / 左鍵</span>] 引爆閃光快門！
+    [<span>A / D 或 ← / →</span>] 轉頭巡視守望台窗戶（<b>正眼直視＝凍結黑影</b>，過久侵蝕滿載將撞裂玻璃）<br>
+    <b>前半夜【取證】</b>：[<span>SHIFT / J / 右鍵</span>] 舉相機對焦誘敵 → [<span>SPACE / K / 左鍵</span>] 拍滿證據後放下相機<br>
+    <b>後半夜【死守至 05:00 AM】</b>：極暗紅眼中 [<span>SHIFT / J / 右鍵</span>] 舉手電筒照亮五官 → 近距 [<span>SPACE / K / 左鍵</span>] 強光閃退！
   </div>
 
   <script>
@@ -2696,11 +2697,33 @@
     toneStereo('sine', 2480, 2480, 0.055, 0.18, 0, 0.055);
   }
 
+  function survivalStartStinger() {
+    if (!ac) return;
+    // Power-down pitch drop + rolling thunder + distant monster enrage roar
+    toneStereo('sawtooth', 440, 48, 0.72, 0.42, 0, 0);
+    toneStereo('triangle', 220, 32, 0.85, 0.48, 0, 0.03);
+    thunderRumble();
+    toneStereo('sawtooth', 185, 78, 0.92, 0.36, -0.35, 0.28);
+    toneStereo('sawtooth', 194, 72, 0.95, 0.32, 0.35, 0.30);
+    noiseStereo(0.75, 0.28, 'bandpass', 620, 0, 0.28);
+  }
+
+  function flashlightBlast() {
+    if (!ac) return;
+    // High-voltage halogen strobe discharge pop + capacitor recharge whine
+    noiseStereo(0.055, 0.80, 'highpass', 1100, 0, 0);
+    toneStereo('square', 640, 95, 0.14, 0.38, 0, 0);
+    toneStereo('sine', 160, 42, 0.16, 0.45, 0, 0.01);
+    toneStereo('sine', 950, 3600, 1.15, 0.10, 0.2, 0.12);
+  }
+
   function playEvent(ev) {
     if (!ev) return;
     switch (ev.type) {
       case 'SWITCH_CLICK': switchClick(); break;
       case 'AF_LOCK': afLockBeep(); break;
+      case 'SURVIVAL_START': survivalStartStinger(); break;
+      case 'FLASHLIGHT_BLAST': flashlightBlast(); break;
       case 'FOOTSTEP': footstepStereo(ev.pan, ev.near); break;
       case 'METAL_SCRATCH': metalScratchStereo(ev.pan, ev.near); break;
       case 'SHUTTER_BLAST': shutterBlast(); break;
@@ -2727,6 +2750,8 @@
     footstepStereo,
     metalScratchStereo,
     shutterBlast,
+    flashlightBlast,
+    survivalStartStinger,
     monsterScream,
     glassShatter,
     dawnChime,
@@ -2810,16 +2835,18 @@
       const btnLeftEl = document.getElementById('btnLeft');
       const btnRightEl = document.getElementById('btnRight');
       const btnAimEl = document.getElementById('btnAim');
+      const btnShootEl = document.getElementById('btnShoot');
 
       bindHold(btnLeftEl, (v) => { btnLeftHold = v; });
       bindHold(btnRightEl, (v) => { btnRightHold = v; });
       btnAimEl.addEventListener('click', () => { A.init(); mouseAimToggle = !mouseAimToggle; });
-      document.getElementById('btnShoot').addEventListener('click', () => {
+      btnShootEl.addEventListener('click', () => {
         A.init();
         pendingAction = true;
         pendingShoot = true;
       });
 
+      let lastIsSurvival = null;
       let lastTime = performance.now();
       function frame(now) {
         const dt = Math.min(0.1, (now - lastTime) / 1000);
@@ -2844,6 +2871,12 @@
         pendingAction = false;
 
         C.step(state, input, dt);
+        const isSurvival = Boolean(state.night && state.night.subPhase === 'SURVIVAL');
+        if (isSurvival !== lastIsSurvival) {
+          lastIsSurvival = isSurvival;
+          btnAimEl.textContent = isSurvival ? '[SHIFT] 舉起手電筒（聚光顯影）' : '[SHIFT] 舉起相機（遮住肉眼）';
+          btnShootEl.textContent = isSurvival ? '[SPACE] 手電筒爆閃' : '[SPACE] 快門閃光';
+        }
         for (const ev of state.events) {
           A.playEvent(ev);
         }
